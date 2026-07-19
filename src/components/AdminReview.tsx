@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { Button, FormField, Card } from './ui';
+import { api } from '../lib/api';
+import { Button, Card } from './ui';
 import type { Contribution, SpeakerInterest, AllyInterest } from '../lib/database.types';
-import type { Session } from '@supabase/supabase-js';
 
 type Tab = 'pending' | 'approved' | 'speakers' | 'allies';
 
@@ -14,83 +13,47 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 export default function AdminReview() {
-  const [session, setSession] = useState<Session | null>(null);
+  const [adminEmail, setAdminEmail] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('pending');
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setAuthLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-    });
-
-    return () => subscription.unsubscribe();
+    api<{ email: string }>('/api/admin/session')
+      .then(({ email }) => setAdminEmail(email))
+      .catch((error) => setAuthError(error instanceof Error ? error.message : 'No se pudo verificar el acceso.'))
+      .finally(() => setAuthLoading(false));
   }, []);
-
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setAuthError('');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setAuthError(error.message);
-  }
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    setSession(null);
-  }
 
   if (authLoading) {
     return <p className="admin-status">Cargando...</p>;
   }
 
-  if (!session) {
+  if (!adminEmail) {
     return (
-      <form onSubmit={handleLogin} className="login-form">
-        <FormField label="Correo electrónico" htmlFor="admin-email">
-          <input
-            type="email"
-            id="admin-email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </FormField>
-        <FormField label="Contraseña" htmlFor="admin-password">
-          <input
-            type="password"
-            id="admin-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </FormField>
-        {authError && <p className="form-error" role="alert">{authError}</p>}
-        <Button type="submit" variant="primary">Iniciar sesión</Button>
+      <div className="admin-access-error">
+        <p className="form-error" role="alert">{authError || 'Se requiere acceso administrativo.'}</p>
+        <a href="/admin">Volver a verificar el acceso</a>
         <style>{`
-          .login-form {
-            max-width: 360px;
-            margin: 0 auto;
-            display: flex;
-            flex-direction: column;
-            gap: var(--space-3);
+          .admin-access-error {
+            padding: var(--space-4);
+            background: var(--surface);
+            border-left: 4px solid var(--error);
           }
         `}</style>
-      </form>
+      </div>
     );
   }
 
   return (
     <div className="admin-panel">
       <div className="admin-header">
-        <span className="admin-user">{session.user.email}</span>
-        <Button variant="ghost" onClick={handleLogout}>Cerrar sesión</Button>
+        <span className="admin-user">{adminEmail}</span>
+        <div className="admin-actions">
+          <a href="/api/admin/export?format=jsonl">JSONL</a>
+          <a href="/api/admin/export?format=csv">CSV</a>
+          <a href="/cdn-cgi/access/logout">Cerrar sesión</a>
+        </div>
       </div>
 
       <div className="admin-tabs">
@@ -127,6 +90,12 @@ export default function AdminReview() {
         .admin-user {
           font-size: 0.85rem;
           color: var(--text-muted);
+        }
+        .admin-actions {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          font-size: 0.8rem;
         }
         .admin-tabs {
           display: flex;
@@ -266,23 +235,26 @@ function PendingTab() {
 
   async function loadPending() {
     setLoading(true);
-    const { data } = await supabase
-      .from('contributions')
-      .select('*')
-      .eq('status', 'pending')
-      .order('created_at', { ascending: true })
-      .limit(100);
-    if (data) setEntries(data);
+    try {
+      const result = await api<{ entries: Contribution[] }>('/api/admin/contributions?status=pending');
+      setEntries(result.entries);
+    } catch {
+      setEntries([]);
+    }
     setLoading(false);
   }
 
   async function updateStatus(id: string, status: 'approved' | 'rejected') {
     setUpdating(id);
-    const { error } = await supabase
-      .from('contributions')
-      .update({ status })
-      .eq('id', id);
-    if (!error) setEntries((prev) => prev.filter((e) => e.id !== id));
+    try {
+      await api(`/api/admin/contributions/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      setEntries((prev) => prev.filter((e) => e.id !== id));
+    } catch {
+      // Keep the entry so the administrator can retry.
+    }
     setUpdating(null);
   }
 
@@ -341,23 +313,26 @@ function ApprovedTab() {
 
   async function loadApproved() {
     setLoading(true);
-    const { data } = await supabase
-      .from('contributions')
-      .select('*')
-      .eq('status', 'approved')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    if (data) setEntries(data);
+    try {
+      const result = await api<{ entries: Contribution[] }>('/api/admin/contributions?status=approved');
+      setEntries(result.entries);
+    } catch {
+      setEntries([]);
+    }
     setLoading(false);
   }
 
   async function revertToPending(id: string) {
     setUpdating(id);
-    const { error } = await supabase
-      .from('contributions')
-      .update({ status: 'pending' })
-      .eq('id', id);
-    if (!error) setEntries((prev) => prev.filter((e) => e.id !== id));
+    try {
+      await api(`/api/admin/contributions/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'pending' }),
+      });
+      setEntries((prev) => prev.filter((e) => e.id !== id));
+    } catch {
+      // Keep the entry so the administrator can retry.
+    }
     setUpdating(null);
   }
 
@@ -407,12 +382,12 @@ function SpeakersTab() {
 
   async function loadSpeakers() {
     setLoading(true);
-    const { data } = await supabase
-      .from('speakers_interest')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    if (data) setSpeakers(data);
+    try {
+      const result = await api<{ speakers: SpeakerInterest[] }>('/api/admin/speakers');
+      setSpeakers(result.speakers);
+    } catch {
+      setSpeakers([]);
+    }
     setLoading(false);
   }
 
@@ -479,12 +454,12 @@ function AlliesTab() {
 
   async function loadAllies() {
     setLoading(true);
-    const { data } = await supabase
-      .from('allies_interest')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    if (data) setAllies(data);
+    try {
+      const result = await api<{ allies: AllyInterest[] }>('/api/admin/allies');
+      setAllies(result.allies);
+    } catch {
+      setAllies([]);
+    }
     setLoading(false);
   }
 

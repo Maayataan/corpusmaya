@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { Button, FormField } from './ui';
 import Certificate from './Certificate';
+import Turnstile from './Turnstile';
 import type { Dialect, Source } from '../lib/database.types';
 
 type FormState = 'idle' | 'recording' | 'submitting' | 'success' | 'error';
@@ -38,6 +39,8 @@ export default function ContributionForm() {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [successData, setSuccessData] = useState<{ entryNumber: number; totalCount: number } | null>(null);
   const [supportsRecording, setSupportsRecording] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileRevision, setTurnstileRevision] = useState(0);
 
   useEffect(() => {
     setSupportsRecording(typeof MediaRecorder !== 'undefined');
@@ -100,7 +103,7 @@ export default function ContributionForm() {
     mediaRecorderRef.current?.stop();
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     e.preventDefault();
     if (!mayaText.trim() || !spanishTranslation.trim() || !contributorName.trim()) {
       setErrorMsg('Completa todos los campos obligatorios.');
@@ -110,63 +113,38 @@ export default function ContributionForm() {
       setErrorMsg('Debes dar tu consentimiento para contribuir.');
       return;
     }
+    if (!turnstileToken) {
+      setErrorMsg('Completa la verificación de seguridad.');
+      return;
+    }
 
     setState('submitting');
     setErrorMsg('');
 
     try {
-      let audioUrl: string | null = null;
-
-      // Upload audio via Cloudflare Worker → R2
+      const form = new FormData();
+      form.set('mayaText', mayaText.trim());
+      form.set('spanishTranslation', spanishTranslation.trim());
+      form.set('contributorName', contributorName.trim());
+      form.set('dialect', dialect);
+      form.set('source', source);
+      form.set('consent', 'true');
+      form.set('turnstileToken', turnstileToken);
       if (audioBlob) {
-        try {
-          const workerUrl = import.meta.env.PUBLIC_UPLOAD_WORKER_URL || 'http://localhost:8787';
-          const audioType = (audioBlob.type || 'audio/webm').split(';')[0].trim();
-          const res = await fetch(`${workerUrl}/upload-url`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contentType: audioType }),
-          });
-          if (!res.ok) throw new Error('Upload URL request failed');
-          const { uploadUrl, publicUrl } = await res.json();
-
-          await fetch(uploadUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': audioBlob.type || 'audio/webm' },
-            body: audioBlob,
-          });
-
-          audioUrl = publicUrl;
-        } catch (uploadErr) {
-          console.warn('Audio upload failed, continuing without audio:', uploadErr);
-        }
+        form.set('audio', audioBlob, `grabacion.${audioBlob.type.includes('mp4') ? 'm4a' : 'webm'}`);
       }
 
-      const { error: insertErr } = await supabase.from('contributions').insert({
-        maya_text: mayaText.trim(),
-        spanish_translation: spanishTranslation.trim(),
-        contributor_name: contributorName.trim(),
-        dialect,
-        source,
-        consent_given: true,
-        audio_url: audioUrl,
+      const result = await api<{ entryNumber: number; totalCount: number }>('/api/contributions', {
+        method: 'POST',
+        body: form,
       });
-
-      if (insertErr) throw insertErr;
-
-      // Get count for certificate
-      const { count } = await supabase
-        .from('contributions')
-        .select('*', { count: 'exact', head: true });
-
-      setSuccessData({
-        entryNumber: count ?? 1,
-        totalCount: count ?? 1,
-      });
+      setSuccessData(result);
       setState('success');
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Error al enviar. Intenta de nuevo.');
       setState('error');
+      setTurnstileToken('');
+      setTurnstileRevision((revision) => revision + 1);
     }
   }
 
@@ -178,6 +156,8 @@ export default function ContributionForm() {
     setConsent(false);
     setSuccessData(null);
     setErrorMsg('');
+    setTurnstileToken('');
+    setTurnstileRevision((revision) => revision + 1);
   }
 
   if (state === 'success' && successData) {
@@ -332,11 +312,18 @@ export default function ContributionForm() {
             required
           />
           <span>
-            Acepto que mi contribución sea parte del corpus abierto de maya yucateco
-            bajo licencia Creative Commons.
+            Autorizo almacenar y revisar mi contribución para integrarla al corpus
+            de maya yucateco. La licencia y las condiciones de uso se documentarán
+            por separado antes de cualquier publicación.
           </span>
         </label>
       </div>
+
+      <Turnstile
+        key={turnstileRevision}
+        action="contribution"
+        onToken={setTurnstileToken}
+      />
 
       {errorMsg && (
         <p className="form-error" role="alert">{errorMsg}</p>
@@ -345,7 +332,7 @@ export default function ContributionForm() {
       <Button
         type="submit"
         variant="primary"
-        disabled={state === 'submitting'}
+        disabled={state === 'submitting' || !turnstileToken}
       >
         {state === 'submitting' ? 'Enviando...' : 'Contribuir'}
       </Button>

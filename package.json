@@ -4,22 +4,33 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "astro dev",
+    "dev": "npm run build && concurrently --kill-others-on-fail \"astro dev\" \"wrangler dev --port 8787 --persist-to .wrangler/state\"",
+    "dev:site": "astro dev",
+    "dev:worker": "wrangler dev --port 8787 --persist-to .wrangler/state",
     "build": "astro build",
-    "preview": "astro preview",
-    "deploy": "astro build && wrangler deploy"
+    "preview": "npm run build && wrangler dev --port 8787 --persist-to .wrangler/state",
+    "check": "astro check && tsc --noEmit -p worker/tsconfig.json",
+    "db:migrate:local": "wrangler d1 migrations apply maayataan-db --local --persist-to .wrangler/state",
+    "db:migrate:remote": "wrangler d1 migrations apply maayataan-db --remote",
+    "db:verify:local": "wrangler d1 execute maayataan-db --local --persist-to .wrangler/state --command \"SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name\"",
+    "deploy": "npm run build && npm run db:migrate:remote && wrangler deploy"
   },
   "dependencies": {
-    "@astrojs/react": "^4.2.0",
-    "@supabase/supabase-js": "^2.49.0",
-    "astro": "^5.5.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "@astrojs/react": "^6.0.1",
+    "astro": "^7.1.1",
+    "jose": "^6.2.3",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@types/qrcode": "^1.5.5"
+    "@astrojs/check": "^0.9.4",
+    "@cloudflare/workers-types": "^5.20260719.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/qrcode": "^1.5.5",
+    "concurrently": "^10.0.3",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.112.0"
   }
 }

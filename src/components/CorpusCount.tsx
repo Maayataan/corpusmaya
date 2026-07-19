@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 
 type Table = 'contributions' | 'speakers_interest' | 'allies_interest';
 
@@ -17,9 +17,12 @@ interface Props {
 }
 
 async function fetchCount(table: Table): Promise<number | null> {
-  const { data, error } = await supabase.rpc('get_table_count', { table_name: table });
-  if (error || data === null) return null;
-  return data as number;
+  try {
+    const result = await api<{ count: number }>(`/api/counts?table=${table}`);
+    return result.count;
+  } catch {
+    return null;
+  }
 }
 
 export default function CorpusCount({ variant = 'block', table = 'contributions' }: Props) {
@@ -40,7 +43,7 @@ export default function CorpusCount({ variant = 'block', table = 'contributions'
     }, POLL_INTERVAL);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [table]);
 
   const num = count ?? '—';
   const cls = `corpus-count corpus-count--${variant}`;

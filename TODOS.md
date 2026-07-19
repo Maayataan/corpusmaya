@@ -31,7 +31,7 @@
 ### API/CLI for institutional partners
 **What:** REST endpoints for bulk ingestion, CLI tool for batch imports, export endpoints (JSONL, CSV, Parquet).
 **Why:** Enables the 25 educational institutions to programmatically contribute data and researchers to download datasets.
-**Context:** Supabase Edge Functions or a lightweight API layer. CLI can use Supabase client directly.
+**Context:** The Worker API already provides protected CSV/JSONL exports; bulk ingestion and a packaged CLI remain.
 **Effort:** M (human) → S (CC)
 **Depends on:** Validation workflow
 **Target:** Week 2
@@ -45,11 +45,11 @@
 **Target:** Week 1
 
 ### Phone/social login + WhatsApp auth
-**What:** Add Supabase phone OTP and/or WhatsApp-based authentication.
+**What:** Add phone OTP and/or WhatsApp-based authentication for community accounts.
 **Why:** Artisans may not have email accounts. Phone auth lowers the barrier for Maya-speaking community members.
-**Context:** Supabase supports phone auth natively. WhatsApp Business API may require additional setup. Anonymous contributions already work for demo.
+**Context:** Cloudflare Access protects staff administration; community identity needs a separate low-friction provider. WhatsApp Business API may require additional setup. Anonymous contributions already work.
 **Effort:** S (human) → S (CC)
-**Depends on:** Supabase phone auth setup + Twilio/WhatsApp Business API
+**Depends on:** Identity-provider decision + Twilio/WhatsApp Business API
 **Target:** Week 3
 
 ## P3 — Future

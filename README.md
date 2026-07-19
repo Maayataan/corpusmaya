@@ -1,163 +1,108 @@
 # maayataan
 
-**Plataforma abierta de corpus lingüístico maya yucateco para IA.**
+**Plataforma abierta para construir un corpus lingüístico de maya yucateco.**
 
-Más de 800,000 personas hablan maya yucateco, pero casi no existen datos digitales para que la inteligencia artificial sea accesible en nuestra lengua. Sin datos, no hay traductores, asistentes de voz, ni herramientas educativas. maayataan existe para cambiar eso.
+Maayataan recolecta texto, traducciones y audio, permite revisarlos antes de su publicación y mantiene los datos bajo control comunitario. Las contribuciones públicas no requieren una cuenta; la revisión administrativa está protegida por Cloudflare Access.
 
-Cada voz que se suma construye el corpus que hará posible la tecnología en maya.
+## Arquitectura
 
-## Qué es maayataan
+- **Interfaz:** Astro 7 + React 19
+- **API:** Cloudflare Worker
+- **Datos:** Cloudflare D1
+- **Audio:** bucket privado de Cloudflare R2
+- **Protección pública:** Turnstile + Rate Limiting
+- **Administración:** Cloudflare Access
+- **Hosting:** Workers Static Assets
 
-maayataan es una plataforma open-source para recolectar, validar y estructurar datos lingüísticos en maya yucateco — texto, traducciones y audio — diseñados para entrenar y hacer fine-tuning de modelos de IA.
-
-El nombre viene del maya: **maaya** (maya) + **t'aan** (lengua, voz, palabra), **Maayat'aan** es como conocemos la lengua Maya hablada en la Península de Yucatán.
-
-## Cómo funciona
-
-1. **T'aan** — Escribe o graba una frase en maya y su traducción al español.
-2. **Jaajkúunsik** — La comunidad valida que la contribución sea correcta.
-3. **Ts'o'okij** — El corpus crece y queda abierto para que cualquiera lo use.
-
-## Quién puede participar
-
-- **Hablantes y lingüistas** — Contribuye frases, graba audio, valida traducciones. [Regístrate como hablante](https://maayataan.org/hablantes).
-- **Desarrolladores, diseñadores e instituciones** — Contribuye con código, diseño, conexiones API, datos o recursos. [Súmate como aliado](https://maayataan.org/aliados).
-- **Cualquier persona** — Las contribuciones anónimas siempre están abiertas. No necesitas cuenta para aportar.
-
-## Stack
-
-- **Frontend:** [Astro](https://astro.build) + [React](https://react.dev)
-- **Backend:** [Supabase](https://supabase.com) (PostgreSQL, Auth, RLS)
-- **Deployment:** [Cloudflare Workers](https://workers.cloudflare.com) (Static Assets)
-- **Design system:** Fraunces + DM Sans + JetBrains Mono. Ver [DESIGN.md](./DESIGN.md).
+El Worker sirve el sitio y atiende `/api/*`. Los audios pendientes permanecen privados; sólo un audio aprobado puede consultarse desde la ruta pública. El esquema versionado vive en [`migrations/`](./migrations/).
 
 ## Desarrollo local
 
 ```bash
-# Clonar
 git clone https://github.com/nosoypoot/maayataan.git
 cd maayataan
-
-# Instalar
 npm install
-
-# Variables de entorno
-cp .env.example .env
-# Editar .env con tus credenciales de Supabase
-
-# Iniciar
+cp .dev.vars.example .dev.vars
+npm run db:migrate:local
 npm run dev
 ```
 
-Necesitas una instancia de Supabase con las tablas configuradas. Consulta el schema en el código fuente (`src/lib/database.types.ts`).
+Astro se abre en `http://localhost:4321` y reenvía `/api` al Worker local en el puerto `8787`. Las claves de prueba oficiales de Turnstile se usan únicamente en desarrollo.
 
-## Estructura del proyecto
-
-```
-src/
-├── components/       # React components (islands)
-│   ├── ui/           # Button, FormField, Card
-│   ├── ContributionForm.tsx
-│   ├── Certificate.tsx
-│   ├── CommunityBadge.tsx
-│   ├── SpeakerForm.tsx
-│   ├── AllyForm.tsx
-│   ├── AdminReview.tsx
-│   └── ...
-├── layouts/          # Layout base (nav, footer, theme)
-├── lib/              # Supabase client, types
-├── pages/            # Rutas Astro
-│   ├── index.astro         # Landing
-│   ├── contribuir.astro    # Formulario de contribución
-│   ├── corpus.astro        # Explorador del corpus
-│   ├── sumate.astro        # Registro comunidad (bridge)
-│   ├── hablantes.astro     # Registro hablantes
-│   ├── aliados.astro       # Registro aliados
-│   ├── admin.astro         # Panel de administración
-│   └── ...
-└── styles/           # CSS global + design tokens
-```
-
-## Contribuir
-
-Las contribuciones son bienvenidas. Si quieres ayudar:
-
-1. Revisa los [issues abiertos](https://github.com/nosoypoot/maayataan/issues).
-2. Haz fork, crea una rama, y envía un PR.
-3. Para cambios grandes, abre un issue primero para discutir la dirección.
-
-Lee [TODOS.md](./TODOS.md) para ver el roadmap actual.
-
-## Contexto
-
-maayataan nace en Yucatán, México. El objetivo es que la comunidad maya-hablante sea dueña de sus datos lingüísticos y que estos datos impulsen tecnología accesible en su lengua.
-
-## Licencia
-
-MIT
-
----
-
-# maayataan (English)
-
-**Open-source Yucatec Maya linguistic corpus platform for AI.**
-
-Over 800,000 people speak Yucatec Maya, but almost no digital data exists to make AI accessible in our language. No data means no translators, voice assistants, or educational tools. maayataan exists to change that.
-
-Every voice that joins builds the corpus that will make technology possible in Maya.
-
-## What is maayataan
-
-maayataan is an open-source platform for collecting, validating, and structuring Yucatec Maya linguistic data — text, translations, and audio — designed for training and fine-tuning AI models.
-
-The name comes from Maya: **maaya** (Maya) + **t'aan** (language, voice, word),  **Maayat'aan** is the name of the Maya language spoken in the Yucatán Peninsula.
-
-## How it works
-
-1. **T'aan** — Write or record a phrase in Maya with its Spanish translation.
-2. **Jaajkúunsik** — The community validates that the contribution is correct.
-3. **Ts'o'okij** — The corpus grows and stays open for anyone to use.
-
-## Who can participate
-
-- **Speakers and linguists** — Contribute phrases, record audio, validate translations. [Register as a speaker](https://maayataan.org/hablantes).
-- **Developers, designers, and institutions** — Contribute code, design, API integrations, data, or resources. [Join as an ally](https://maayataan.org/aliados).
-- **Anyone** — Anonymous contributions are always open. No account needed to contribute.
-
-## Tech stack
-
-- **Frontend:** [Astro](https://astro.build) + [React](https://react.dev)
-- **Backend:** [Supabase](https://supabase.com) (PostgreSQL, Auth, RLS)
-- **Deployment:** [Cloudflare Workers](https://workers.cloudflare.com) (Static Assets)
-- **Design system:** Fraunces + DM Sans + JetBrains Mono. See [DESIGN.md](./DESIGN.md).
-
-## Local development
+Comandos útiles:
 
 ```bash
-git clone https://github.com/nosoypoot/maayataan.git
-cd maayataan
-npm install
-cp .env.example .env
-# Add your Supabase credentials to .env
-npm run dev
+npm run check             # Astro/TypeScript + Worker TypeScript
+npm run build             # build de producción
+npm run db:verify:local   # verifica el esquema D1 local
+npm run preview           # sitio compilado + Worker local
+npm run deploy            # build, migraciones remotas y deploy
 ```
 
-You need a Supabase instance with the tables configured. See the schema in `src/lib/database.types.ts`.
+## Configuración de Cloudflare
 
-## Contributing
+`wrangler.toml` declara D1, R2, Static Assets, Rate Limiting y las variables públicas. Los secretos nunca se guardan en Git:
 
-Contributions are welcome. To help:
+```bash
+npx wrangler secret put TURNSTILE_SECRET
+```
 
-1. Check the [open issues](https://github.com/nosoypoot/maayataan/issues).
-2. Fork, create a branch, and submit a PR.
-3. For large changes, open an issue first to discuss direction.
+`/admin*` y `/api/admin*` están protegidos por la aplicación self-hosted `Maayataan Admin` de Cloudflare Access. El Worker valida además el JWT de Access mediante `TEAM_DOMAIN` y `POLICY_AUD`; en producción falla de forma segura si faltan esas variables.
 
-See [TODOS.md](./TODOS.md) for the current roadmap.
+## Migración desde Supabase
 
-## Context
+La aplicación ya no depende del SDK ni de servicios de Supabase. Si conservas exportaciones CSV de las tablas anteriores, conviértelas y cárgalas así:
 
-maayataan is born in Yucatan, Mexico. The goal is for the Maya-speaking community to own their linguistic data and for that data to power accessible technology in their language.
+```bash
+python3 scripts/import_supabase.py \
+  --contributions contributions.csv \
+  --speakers speaker_interests.csv \
+  --allies ally_interests.csv \
+  --output d1-import.sql
+
+npx wrangler d1 execute maayataan-db --remote --file d1-import.sql
+```
+
+La migración inicial desde el proyecto Supabase `Mayataan` se completó en julio de 2026. El importador se conserva para auditoría, restauraciones y futuras migraciones; los archivos exportados pueden contener datos personales y nunca deben guardarse en Git.
+
+## Exportar el corpus
+
+El endpoint administrativo exporta únicamente contribuciones aprobadas:
+
+```bash
+MAAYATAAN_URL=https://maayataan.org python3 scripts/export.py --format jsonl
+```
+
+Para automatización, define `CF_ACCESS_CLIENT_ID` y `CF_ACCESS_CLIENT_SECRET` con un service token de Access. CSV y JSONL funcionan sin dependencias adicionales; Parquet requiere `pyarrow`.
+
+## Estructura
+
+```text
+src/                 interfaz Astro/React
+worker/src/          API del Cloudflare Worker
+migrations/          migraciones D1
+scripts/             importación y exportación
+public/              assets y cabeceras de seguridad
+wrangler.toml        infraestructura del Worker
+```
+
+## Principios
+
+- Los datos son de la comunidad.
+- El consentimiento, la licencia y las etiquetas de gobernanza son campos distintos.
+- Las contribuciones anónimas deben seguir siendo accesibles desde teléfonos modestos.
+- Ningún audio pendiente se publica desde R2.
+
+Consulta [CONTRIBUTING.md](./CONTRIBUTING.md), [DESIGN.md](./DESIGN.md) y [TODOS.md](./TODOS.md).
 
 ## License
 
-MIT
+Código bajo licencia MIT. La licencia aplicable a cada contribución del corpus se registra por separado.
+
+---
+
+## English
+
+Maayataan is an open platform for collecting, reviewing, and publishing Yucatec Maya text, translations, and audio. It runs on Astro/React and Cloudflare Workers, D1, R2, Turnstile, and Access. Public contributions do not require an account; administrative review is protected by Access.
+
+Follow the local setup above. The source Supabase project is no longer a runtime dependency. Legacy CSV exports can be converted with `scripts/import_supabase.py`, and approved data can be downloaded with `scripts/export.py`.

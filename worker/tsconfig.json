@@ -4,6 +4,12 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
-    "types": ["@cloudflare/workers-types"]
-  }
+    "lib": ["ES2023"],
+    "types": [],
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "../node_modules/@cloudflare/workers-types/index.d.ts"
+  ]
 }

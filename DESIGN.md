@@ -4,7 +4,7 @@
 - **What this is:** Open-source platform for collecting, validating, and structuring Yucatec Maya linguistic corpus data for AI training
 - **Who it's for:** Maya-speaking artisans on smartphones, academics, government officials in Yucatan
 - **Space/industry:** Language preservation, indigenous tech, community corpus collection
-- **Project type:** Web app (Astro + React + Supabase)
+- **Project type:** Web app (Astro + React + Cloudflare Workers/D1/R2)
 
 ## Aesthetic Direction
 - **Direction:** Organic/Natural with architectural structure
