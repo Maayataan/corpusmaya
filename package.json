@@ -8,6 +8,8 @@
     "dev:site": "astro dev",
     "dev:worker": "wrangler dev --port 8787 --persist-to .wrangler/state",
     "build": "astro build",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "preview": "npm run build && wrangler dev --port 8787 --persist-to .wrangler/state",
     "check": "astro check && tsc --noEmit -p worker/tsconfig.json",
     "db:migrate:local": "wrangler d1 migrations apply maayataan-db --local --persist-to .wrangler/state",
@@ -19,18 +21,23 @@
     "@astrojs/react": "^6.0.1",
     "astro": "^7.1.1",
     "jose": "^6.2.3",
+    "qrcode": "^1.5.4",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "qrcode": "^1.5.4"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
     "@cloudflare/workers-types": "^5.20260719.1",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@types/qrcode": "^1.5.5",
+    "@vitejs/plugin-react": "^6.0.3",
+    "@vitest/browser-playwright": "^4.1.10",
     "concurrently": "^10.0.3",
+    "playwright": "^1.61.1",
     "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "vitest-browser-react": "^2.2.0",
     "wrangler": "^4.112.0"
   }
 }
