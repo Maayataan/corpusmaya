@@ -18,7 +18,7 @@ export function formatRecordingTime(durationMs: number): string {
 }
 
 export function getRecordingErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  const message = error instanceof Error ? `${error.name} ${error.message}`.toLowerCase() : '';
   if (message.includes('notallowed') || message.includes('permission') || message.includes('denied')) {
     return 'El micrófono está bloqueado. Actívalo en los permisos del navegador y vuelve a intentarlo.';
   }
@@ -41,6 +41,7 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
   const waveSurferRef = useRef<WaveSurfer | null>(null);
   const recordPluginRef = useRef<RecordPlugin | null>(null);
   const discardOnEndRef = useRef(false);
+  const hasRecordingRef = useRef(false);
   const [status, setStatus] = useState<RecorderStatus>('loading');
   const [durationMs, setDurationMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -97,6 +98,10 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
 
         unsubscribe = [
           record.on('record-start', () => {
+            wavesurfer.empty();
+            wavesurfer.setOptions({ interact: false });
+            hasRecordingRef.current = false;
+            onRecordingChange(null);
             setDurationMs(0);
             setStatus('recording');
           }),
@@ -107,11 +112,13 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
           record.on('record-end', (blob) => {
             if (discardOnEndRef.current) {
               discardOnEndRef.current = false;
+              hasRecordingRef.current = false;
               wavesurfer.empty();
               setDurationMs(0);
               setStatus('ready');
               return;
             }
+            hasRecordingRef.current = true;
             onRecordingChange(blob);
             setDurationMs(record.getDuration());
             setStatus('recorded');
@@ -142,13 +149,10 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
     const record = recordPluginRef.current;
     const wavesurfer = waveSurferRef.current;
     if (!record || !wavesurfer) return;
+    const replacingExisting = hasRecordingRef.current;
 
     try {
       wavesurfer.pause();
-      wavesurfer.empty();
-      wavesurfer.setOptions({ interact: false });
-      onRecordingChange(null);
-      setDurationMs(0);
       setIsPlaying(false);
       setErrorMessage('');
       setStatus('requesting');
@@ -161,7 +165,7 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
     } catch (error) {
       record.stopMic();
       setErrorMessage(getRecordingErrorMessage(error));
-      setStatus('error');
+      setStatus(replacingExisting ? 'recorded' : 'error');
     }
   }
 
@@ -181,6 +185,7 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
   function discardRecording() {
     waveSurferRef.current?.stop();
     waveSurferRef.current?.empty();
+    hasRecordingRef.current = false;
     onRecordingChange(null);
     setDurationMs(0);
     setIsPlaying(false);

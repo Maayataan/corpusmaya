@@ -17,7 +17,7 @@ describe('voice recorder helpers', () => {
   });
 
   test('explains missing microphones', () => {
-    expect(getRecordingErrorMessage(new Error('No available adapters')))
+    expect(getRecordingErrorMessage(new DOMException('Requested device not found', 'NotFoundError')))
       .toContain('micrófono disponible');
   });
 
