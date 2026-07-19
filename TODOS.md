@@ -20,6 +20,22 @@
 
 ## P2 — Important
 
+### Unified waveform player for corpus entries
+**What:** Replace the browser-native audio controls in `/corpus` with a compact, accessible WaveSurfer player that reuses the visual language of the contribution recorder.
+**Why:** Native players render inconsistently, can initially show `0:00 / 0:00`, and visually break the otherwise cohesive Maayataan experience.
+**Context:** Deferred from UX review FINDING-005 (2026-07-19). The recording and preview flow now uses WaveSurfer; corpus playback can reuse that dependency without adding another library.
+**Effort:** S (human) → S (CC)
+**Depends on:** Enough approved audio entries to test loading and simultaneous playback
+**Target:** Next corpus UX pass
+
+### Physical-device audio QA matrix
+**What:** Verify microphone permission, recording, preview, re-record, cancellation, and upload on current Safari/iOS and Chrome/Android with real devices.
+**Why:** Headless Chromium verifies layout, errors, and browser behavior but cannot validate real microphone capture or mobile OS permission prompts.
+**Context:** Deferred from UX review FINDING-006 (2026-07-19). Cover a denied permission, no microphone, an interrupted recording, and the 60-second automatic stop.
+**Effort:** S (human) → S (CC)
+**Depends on:** Preview or production URL over HTTPS and access to iOS/Android devices
+**Target:** Before announcing the new recorder publicly
+
 ### One-click HuggingFace Hub publish
 **What:** Python script that packages validated entries as a HuggingFace dataset with auto-generated dataset card, consent-level filtering, and `datasets.load_dataset()` compatibility.
 **Why:** Makes the corpus discoverable and usable by the global NLP community. Enables submission to AmericasNLP 2026 workshop.
