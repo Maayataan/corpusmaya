@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { api, ApiError } from '../src/lib/api';
+import { api } from '../src/lib/api';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -47,7 +47,7 @@ describe('api', () => {
     )));
 
     const request = api('/api/contributions', { method: 'POST' });
-    await expect(request).rejects.toMatchObject<ApiError>({
+    await expect(request).rejects.toMatchObject({
       message: 'El audio supera el límite permitido.',
       status: 413,
     });

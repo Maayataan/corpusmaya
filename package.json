@@ -21,9 +21,11 @@
     "@astrojs/react": "^6.0.1",
     "astro": "^7.1.1",
     "jose": "^6.2.3",
+    "lucide-react": "^1.25.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "wavesurfer.js": "^7.12.11"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",

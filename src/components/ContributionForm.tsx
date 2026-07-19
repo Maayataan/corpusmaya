@@ -1,11 +1,12 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { api } from '../lib/api';
 import { Button, FormField } from './ui';
 import Certificate from './Certificate';
 import Turnstile from './Turnstile';
+import VoiceRecorder from './VoiceRecorder';
 import type { Dialect, Source } from '../lib/database.types';
 
-type FormState = 'idle' | 'recording' | 'submitting' | 'success' | 'error';
+type FormState = 'idle' | 'submitting' | 'success' | 'error';
 
 const DIALECTS: { value: Dialect; label: string }[] = [
   { value: 'oriente', label: 'Oriente' },
@@ -24,8 +25,6 @@ const SOURCES: { value: Source; label: string }[] = [
   { value: 'otro', label: 'Otro' },
 ];
 
-const MAX_RECORDING_SECONDS = 60;
-
 export default function ContributionForm() {
   const [state, setState] = useState<FormState>('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -36,72 +35,9 @@ export default function ContributionForm() {
   const [source, setSource] = useState<Source>('hablante_nativo');
   const [consent, setConsent] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [successData, setSuccessData] = useState<{ entryNumber: number; totalCount: number } | null>(null);
-  const [supportsRecording, setSupportsRecording] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileRevision, setTurnstileRevision] = useState(0);
-
-  useEffect(() => {
-    setSupportsRecording(typeof MediaRecorder !== 'undefined');
-  }, []);
-
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  async function startRecording() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      // Pick a supported mime type — webm for Chrome/Firefox, mp4 for Safari
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : MediaRecorder.isTypeSupported('audio/mp4')
-            ? 'audio/mp4'
-            : '';
-
-      const recorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream);
-      chunksRef.current = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        setAudioBlob(blob);
-        stream.getTracks().forEach((t) => t.stop());
-        if (timerRef.current) clearInterval(timerRef.current);
-        setState('idle');
-      };
-
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setRecordingSeconds(0);
-      setState('recording');
-
-      timerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => {
-          if (prev + 1 >= MAX_RECORDING_SECONDS) {
-            recorder.stop();
-            return prev + 1;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    } catch {
-      setErrorMsg('No se pudo acceder al micrófono. Puedes contribuir solo con texto.');
-    }
-  }
-
-  function stopRecording() {
-    mediaRecorderRef.current?.stop();
-  }
 
   async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     e.preventDefault();
@@ -228,6 +164,10 @@ export default function ContributionForm() {
         />
       </FormField>
 
+      <FormField label="U juum a t'aan" sublabel="Tu voz (opcional)">
+        <VoiceRecorder onRecordingChange={setAudioBlob} />
+      </FormField>
+
       <FormField label="U tsikbal ich kastelan t'aan" sublabel="Traducción al español" htmlFor="spanish-translation">
         <textarea
           id="spanish-translation"
@@ -276,32 +216,6 @@ export default function ContributionForm() {
           </select>
         </FormField>
       </div>
-
-      {/* Audio recording — progressive enhancement */}
-      {supportsRecording && (
-        <FormField label="U juum a t'aan" sublabel="Audio (opcional)">
-          {state === 'recording' ? (
-            <Button
-              type="button"
-              variant="record"
-              recording
-              onClick={stopRecording}
-              aria-label="Detener grabación"
-            >
-              ● {recordingSeconds}s — Detener
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="record"
-              onClick={startRecording}
-              aria-label="Grabar audio / Ts'íib t'aan"
-            >
-              {audioBlob ? '✓ Audio grabado — Grabar de nuevo' : '○ Grabar audio'}
-            </Button>
-          )}
-        </FormField>
-      )}
 
       <div className="form-field consent-field">
         <label>
