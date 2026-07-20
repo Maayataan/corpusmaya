@@ -19,6 +19,7 @@ export interface Contribution {
   id: string;
   maya_text: string;
   spanish_translation: string;
+  prompt_topic: string | null;
   audio_url: string | null;
   contributor_name: string;
   consent_given: boolean;

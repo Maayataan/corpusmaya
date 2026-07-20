@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 
 const POLL_INTERVAL = 10_000;
 
@@ -8,10 +8,12 @@ export default function LiveCounter() {
 
   useEffect(() => {
     async function fetch() {
-      const { data, error } = await supabase.rpc('get_table_count', {
-        table_name: 'contributions',
-      });
-      if (!error && data !== null) setCount(data as number);
+      try {
+        const result = await api<{ count: number }>('/api/counts?table=contributions');
+        setCount(result.count);
+      } catch {
+        // Keep the last known value during transient failures.
+      }
     }
 
     fetch();

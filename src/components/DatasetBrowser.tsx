@@ -1,53 +1,41 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { Button, Card } from './ui';
 import type { Contribution, Dialect } from '../lib/database.types';
-
-const PAGE_SIZE = 20;
 
 export default function DatasetBrowser() {
   const [entries, setEntries] = useState<Contribution[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialect, setDialect] = useState<Dialect | ''>('');
   const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
     loadEntries();
-  }, [dialect, page]);
+  }, [dialect, page, appliedSearch]);
 
   async function loadEntries() {
     setLoading(true);
-    let query = supabase
-      .from('contributions')
-      .select('*')
-      .eq('status', 'approved')
-      .order('created_at', { ascending: false })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-
-    if (dialect) {
-      query = query.eq('dialect', dialect);
-    }
-    if (search.trim()) {
-      query = query.or(
-        `maya_text.ilike.%${search.trim()}%,spanish_translation.ilike.%${search.trim()}%`
-      );
-    }
-
-    const { data, error } = await query;
-    if (!error && data) {
-      setEntries(data);
-      setHasMore(data.length > PAGE_SIZE);
-      if (data.length > PAGE_SIZE) data.pop();
+    const params = new URLSearchParams({ page: String(page) });
+    if (dialect) params.set('dialect', dialect);
+    if (appliedSearch) params.set('search', appliedSearch);
+    try {
+      const result = await api<{ entries: Contribution[]; hasMore: boolean }>(`/api/corpus?${params}`);
+      setEntries(result.entries);
+      setHasMore(result.hasMore);
+    } catch {
+      setEntries([]);
+      setHasMore(false);
     }
     setLoading(false);
   }
 
-  function handleSearch(e: React.FormEvent) {
+  function handleSearch(e: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     e.preventDefault();
     setPage(0);
-    loadEntries();
+    setAppliedSearch(search.trim());
   }
 
   return (

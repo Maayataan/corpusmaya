@@ -1,6 +1,11 @@
 node_modules/
 dist/
 .env
+.dev.vars
+.wrangler/
 .astro/
+__pycache__/
+supabase/.temp/
+.DS_Store
 .gstack/
 .claude/

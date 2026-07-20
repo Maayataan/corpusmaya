@@ -20,6 +20,22 @@
 
 ## P2 — Important
 
+### Unified waveform player for corpus entries
+**What:** Replace the browser-native audio controls in `/corpus` with a compact, accessible WaveSurfer player that reuses the visual language of the contribution recorder.
+**Why:** Native players render inconsistently, can initially show `0:00 / 0:00`, and visually break the otherwise cohesive Maayataan experience.
+**Context:** Deferred from UX review FINDING-005 (2026-07-19). The recording and preview flow now uses WaveSurfer; corpus playback can reuse that dependency without adding another library.
+**Effort:** S (human) → S (CC)
+**Depends on:** Enough approved audio entries to test loading and simultaneous playback
+**Target:** Next corpus UX pass
+
+### Physical-device audio QA matrix
+**What:** Verify microphone permission, recording, preview, re-record, cancellation, and upload on current Safari/iOS and Chrome/Android with real devices.
+**Why:** Headless Chromium verifies layout, errors, and browser behavior but cannot validate real microphone capture or mobile OS permission prompts.
+**Context:** Deferred from UX review FINDING-006 (2026-07-19). Cover a denied permission, no microphone, an interrupted recording, playback seeking, and the 120-second automatic stop.
+**Effort:** S (human) → S (CC)
+**Depends on:** Preview or production URL over HTTPS and access to iOS/Android devices
+**Target:** Before announcing the new recorder publicly
+
 ### One-click HuggingFace Hub publish
 **What:** Python script that packages validated entries as a HuggingFace dataset with auto-generated dataset card, consent-level filtering, and `datasets.load_dataset()` compatibility.
 **Why:** Makes the corpus discoverable and usable by the global NLP community. Enables submission to AmericasNLP 2026 workshop.
@@ -31,7 +47,7 @@
 ### API/CLI for institutional partners
 **What:** REST endpoints for bulk ingestion, CLI tool for batch imports, export endpoints (JSONL, CSV, Parquet).
 **Why:** Enables the 25 educational institutions to programmatically contribute data and researchers to download datasets.
-**Context:** Supabase Edge Functions or a lightweight API layer. CLI can use Supabase client directly.
+**Context:** The Worker API already provides protected CSV/JSONL exports; bulk ingestion and a packaged CLI remain.
 **Effort:** M (human) → S (CC)
 **Depends on:** Validation workflow
 **Target:** Week 2
@@ -45,11 +61,11 @@
 **Target:** Week 1
 
 ### Phone/social login + WhatsApp auth
-**What:** Add Supabase phone OTP and/or WhatsApp-based authentication.
+**What:** Add phone OTP and/or WhatsApp-based authentication for community accounts.
 **Why:** Artisans may not have email accounts. Phone auth lowers the barrier for Maya-speaking community members.
-**Context:** Supabase supports phone auth natively. WhatsApp Business API may require additional setup. Anonymous contributions already work for demo.
+**Context:** Cloudflare Access protects staff administration; community identity needs a separate low-friction provider. WhatsApp Business API may require additional setup. Anonymous contributions already work.
 **Effort:** S (human) → S (CC)
-**Depends on:** Supabase phone auth setup + Twilio/WhatsApp Business API
+**Depends on:** Identity-provider decision + Twilio/WhatsApp Business API
 **Target:** Week 3
 
 ## P3 — Future

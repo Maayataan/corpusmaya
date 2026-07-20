@@ -1,114 +1,69 @@
 #!/usr/bin/env python3
-"""Export approved contributions from Supabase to CSV, JSONL, or Parquet."""
+"""Download the approved corpus from the Cloudflare Worker API."""
 
 import argparse
-import csv
 import json
 import os
 import sys
-
-try:
-    import psycopg2
-except ImportError:
-    print("Install psycopg2: pip install psycopg2-binary", file=sys.stderr)
-    sys.exit(1)
-
-QUERY = """
-SELECT
-    id, maya_text, spanish_translation, audio_url,
-    contributor_name, dialect::text, source::text, created_at
-FROM contributions
-WHERE status = 'approved'
-  AND consent_given = true
-ORDER BY created_at
-"""
+import urllib.error
+import urllib.parse
+import urllib.request
 
 
-def get_connection():
-    url = os.environ.get("DATABASE_URL")
-    if not url:
-        print("Set DATABASE_URL to your Supabase PostgreSQL connection string.", file=sys.stderr)
-        sys.exit(1)
-    return psycopg2.connect(url)
+def fetch_export(base_url: str, output_format: str) -> bytes:
+    url = f"{base_url.rstrip('/')}/api/admin/export?{urllib.parse.urlencode({'format': output_format})}"
+    headers = {}
+    client_id = os.environ.get("CF_ACCESS_CLIENT_ID")
+    client_secret = os.environ.get("CF_ACCESS_CLIENT_SECRET")
+    if client_id and client_secret:
+        headers["CF-Access-Client-Id"] = client_id
+        headers["CF-Access-Client-Secret"] = client_secret
+
+    request = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read()
+    except urllib.error.HTTPError as error:
+        message = error.read().decode("utf-8", errors="replace")
+        print(f"Export failed ({error.code}): {message}", file=sys.stderr)
+        raise SystemExit(1) from error
+    except urllib.error.URLError as error:
+        print(f"Export failed: {error.reason}", file=sys.stderr)
+        raise SystemExit(1) from error
 
 
-def export_csv(rows, columns, path):
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(columns)
-        for row in rows:
-            writer.writerow([str(v) if v is not None else "" for v in row])
-    print(f"Exported {len(rows)} rows to {path}")
-
-
-def export_jsonl(rows, columns, path):
-    with open(path, "w", encoding="utf-8") as f:
-        for row in rows:
-            record = {}
-            for col, val in zip(columns, row):
-                if hasattr(val, "isoformat"):
-                    record[col] = val.isoformat()
-                else:
-                    record[col] = val
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-    print(f"Exported {len(rows)} rows to {path}")
-
-
-def export_parquet(rows, columns, path):
+def to_parquet(jsonl: bytes, output: str) -> None:
     try:
         import pyarrow as pa
         import pyarrow.parquet as pq
     except ImportError:
         print("Install pyarrow: pip install pyarrow", file=sys.stderr)
-        sys.exit(1)
+        raise SystemExit(1)
 
-    data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
-    # Convert datetime to strings for parquet compatibility
-    for col in data:
-        data[col] = [
-            v.isoformat() if hasattr(v, "isoformat") else v for v in data[col]
-        ]
-    table = pa.table(data)
-    pq.write_table(table, path)
-    print(f"Exported {len(rows)} rows to {path}")
+    rows = [json.loads(line) for line in jsonl.decode("utf-8").splitlines() if line]
+    pq.write_table(pa.Table.from_pylist(rows), output)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Export maayataan corpus")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Export the approved maayataan corpus")
+    parser.add_argument("--format", choices=["csv", "jsonl", "parquet"], default="jsonl")
+    parser.add_argument("--output")
     parser.add_argument(
-        "--format",
-        choices=["csv", "jsonl", "parquet"],
-        default="csv",
-        help="Output format (default: csv)",
-    )
-    parser.add_argument(
-        "--output",
-        default=None,
-        help="Output file path (default: corpus.<format>)",
+        "--base-url",
+        default=os.environ.get("MAAYATAAN_URL", "https://maayataan.org"),
+        help="Worker base URL (default: MAAYATAAN_URL or https://maayataan.org)",
     )
     args = parser.parse_args()
-
     output = args.output or f"corpus.{args.format}"
 
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(QUERY)
-            columns = [desc[0] for desc in cur.description]
-            rows = cur.fetchall()
-    finally:
-        conn.close()
-
-    if not rows:
-        print("No approved contributions to export.")
-        return
-
-    if args.format == "csv":
-        export_csv(rows, columns, output)
-    elif args.format == "jsonl":
-        export_jsonl(rows, columns, output)
-    elif args.format == "parquet":
-        export_parquet(rows, columns, output)
+    source_format = "jsonl" if args.format == "parquet" else args.format
+    data = fetch_export(args.base_url, source_format)
+    if args.format == "parquet":
+        to_parquet(data, output)
+    else:
+        with open(output, "wb") as file:
+            file.write(data)
+    print(f"Exported corpus to {output}")
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ interface CertificateProps {
 
 const SITE_URL = 'https://maayataan.org';
 
-function getShareText(name: string, entry: number) {
+function getShareText(entry: number) {
   return `Contribuí al corpus abierto de maya yucateco — entrada #${entry}. ¿Sabes maya? Contribuye en: ${SITE_URL}`;
 }
 
@@ -129,7 +129,7 @@ export default function Certificate({ contributorName, entryNumber, totalCount }
     if (!blob) return;
 
     const file = new File([blob], 'maayataan-contribucion.png', { type: 'image/png' });
-    const text = getShareText(contributorName, entryNumber);
+    const text = getShareText(entryNumber);
 
     // Web Share API with file — works on mobile (WhatsApp, IG, FB, etc.)
     if (navigator.share && navigator.canShare) {

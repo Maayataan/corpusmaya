@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { Button, FormField } from './ui';
 import CommunityBadge from './CommunityBadge';
+import Turnstile from './Turnstile';
 import type { Dialect } from '../lib/database.types';
 
 type FormState = 'idle' | 'submitting' | 'success' | 'error';
@@ -14,8 +15,6 @@ const DIALECTS: { value: Dialect; label: string }[] = [
   { value: 'costa', label: 'Costa' },
   { value: 'otro', label: 'Otro / Ma\' in wojel — No sé' },
 ];
-
-const SITE_URL = 'https://maayataan.org';
 
 function validatePhone(value: string): boolean {
   return /^\d{10}$/.test(value.replace(/\s/g, ''));
@@ -37,6 +36,8 @@ export default function SpeakerForm() {
   const [message, setMessage] = useState('');
   const [honeypot, setHoneypot] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileRevision, setTurnstileRevision] = useState(0);
 
   function validate(): boolean {
     const errs: Record<string, string> = {};
@@ -53,29 +54,39 @@ export default function SpeakerForm() {
     return Object.keys(errs).length === 0;
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     e.preventDefault();
     if (honeypot) return;
     if (!validate()) return;
+    if (!turnstileToken) {
+      setState('error');
+      setErrorMsg('Completa la verificación de seguridad.');
+      return;
+    }
 
     setState('submitting');
     setErrorMsg('');
 
-    const { error } = await supabase.from('speakers_interest').insert({
-      name: name.trim(),
-      phone: whatsapp.trim(),
-      email: email.trim() || null,
-      dialect,
-      is_native_speaker: isNative,
-      wants_to_validate: wantsToValidate,
-      message: message.trim() || null,
-    });
-
-    if (error) {
-      setState('error');
-      setErrorMsg('No se pudo enviar. Intenta de nuevo.');
-    } else {
+    try {
+      await api('/api/speakers', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: whatsapp.trim(),
+          email: email.trim() || null,
+          dialect,
+          isNativeSpeaker: isNative,
+          wantsToValidate,
+          message: message.trim() || null,
+          turnstileToken,
+        }),
+      });
       setState('success');
+    } catch (error) {
+      setState('error');
+      setErrorMsg(error instanceof Error ? error.message : 'No se pudo enviar. Intenta de nuevo.');
+      setTurnstileToken('');
+      setTurnstileRevision((revision) => revision + 1);
     }
   }
 
@@ -180,9 +191,15 @@ export default function SpeakerForm() {
         />
       </div>
 
-      {state === 'error' && <p className="form-error">{errorMsg}</p>}
+      <Turnstile
+        key={turnstileRevision}
+        action="speaker"
+        onToken={setTurnstileToken}
+      />
 
-      <Button type="submit" variant="primary" disabled={state === 'submitting'}>
+      {state === 'error' && <p className="form-error" role="alert">{errorMsg}</p>}
+
+      <Button type="submit" variant="primary" disabled={state === 'submitting' || !turnstileToken}>
         {state === 'submitting' ? 'Enviando...' : "Ts'aik in k'aaba' — Registrarme"}
       </Button>
 

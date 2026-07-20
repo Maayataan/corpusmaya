@@ -1,7 +1,43 @@
 #:schema node_modules/wrangler/config-schema.json
 name = "maayataan"
-compatibility_date = "2024-12-01"
+account_id = "19c0b85670d12ed11b25a2d37fa654ce"
+main = "worker/src/index.ts"
+compatibility_date = "2026-07-19"
+compatibility_flags = ["nodejs_compat"]
 
-# Workers Static Assets — serves the Astro build output
+[[routes]]
+pattern = "maayataan.org"
+custom_domain = true
+
 [assets]
 directory = "./dist"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "maayataan-db"
+database_id = "197cbe1b-9426-43ad-ac5e-bdbd950f52c6"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "AUDIO_BUCKET"
+bucket_name = "maayataan-audio"
+
+[[ratelimits]]
+name = "PUBLIC_RATE_LIMITER"
+namespace_id = "24001"
+
+[ratelimits.simple]
+limit = 20
+period = 60
+
+[vars]
+ENVIRONMENT = "production"
+ALLOWED_ORIGINS = "https://maayataan.org,https://www.maayataan.org,https://maayataan.alberto-19c.workers.dev"
+ALLOWED_HOSTNAMES = "maayataan.org,www.maayataan.org,maayataan.alberto-19c.workers.dev"
+TEAM_DOMAIN = "https://soft-thunder-7019.cloudflareaccess.com"
+POLICY_AUD = "7e9462825ca255c0adc55f5307db189e1095a7553a4939d2cafd97e90dced0dd"
+
+[observability]
+enabled = true

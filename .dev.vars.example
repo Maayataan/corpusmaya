@@ -1,0 +1,9 @@
+ENVIRONMENT=development
+ALLOWED_ORIGINS=http://localhost:4321,http://localhost:8787
+ALLOWED_HOSTNAMES=localhost
+TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+
+# Optional when testing Cloudflare Access locally. Development mode bypasses
+# Access by design; production always requires both values.
+# TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+# POLICY_AUD=your-access-application-audience

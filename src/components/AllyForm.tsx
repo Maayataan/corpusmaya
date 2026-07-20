@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { Button, FormField } from './ui';
 import CommunityBadge from './CommunityBadge';
+import Turnstile from './Turnstile';
 
 type FormState = 'idle' | 'submitting' | 'success' | 'error';
 
@@ -13,8 +14,6 @@ const ROLES = [
   { value: 'institucion_educativa', label: 'Institución educativa' },
   { value: 'otro', label: 'Otro' },
 ];
-
-const SITE_URL = 'https://maayataan.org';
 
 function validateEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -35,6 +34,8 @@ export default function AllyForm() {
   const [message, setMessage] = useState('');
   const [honeypot, setHoneypot] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileRevision, setTurnstileRevision] = useState(0);
 
   function toggleRole(role: string) {
     setSelectedRoles((prev) =>
@@ -58,28 +59,38 @@ export default function AllyForm() {
     return Object.keys(errs).length === 0;
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     e.preventDefault();
     if (honeypot) return;
     if (!validate()) return;
+    if (!turnstileToken) {
+      setState('error');
+      setErrorMsg('Completa la verificación de seguridad.');
+      return;
+    }
 
     setState('submitting');
     setErrorMsg('');
 
-    const { error } = await supabase.from('allies_interest').insert({
-      name: name.trim(),
-      email: email.trim(),
-      phone: phone.trim() || null,
-      organization: organization.trim() || null,
-      roles: selectedRoles,
-      message: message.trim() || null,
-    });
-
-    if (error) {
-      setState('error');
-      setErrorMsg('No se pudo enviar. Intenta de nuevo.');
-    } else {
+    try {
+      await api('/api/allies', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          phone: phone.trim() || null,
+          organization: organization.trim() || null,
+          roles: selectedRoles,
+          message: message.trim() || null,
+          turnstileToken,
+        }),
+      });
       setState('success');
+    } catch (error) {
+      setState('error');
+      setErrorMsg(error instanceof Error ? error.message : 'No se pudo enviar. Intenta de nuevo.');
+      setTurnstileToken('');
+      setTurnstileRevision((revision) => revision + 1);
     }
   }
 
@@ -171,9 +182,15 @@ export default function AllyForm() {
         />
       </div>
 
-      {state === 'error' && <p className="form-error">{errorMsg}</p>}
+      <Turnstile
+        key={turnstileRevision}
+        action="ally"
+        onToken={setTurnstileToken}
+      />
 
-      <Button type="submit" variant="primary" disabled={state === 'submitting'}>
+      {state === 'error' && <p className="form-error" role="alert">{errorMsg}</p>}
+
+      <Button type="submit" variant="primary" disabled={state === 'submitting' || !turnstileToken}>
         {state === 'submitting' ? 'Enviando...' : 'Sumarme como aliado'}
       </Button>
 

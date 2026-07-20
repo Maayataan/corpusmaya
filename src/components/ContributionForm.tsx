@@ -1,10 +1,17 @@
-import { useState, useRef, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { useEffect, useRef, useState } from 'react';
+import { Lightbulb, RefreshCw, X } from 'lucide-react';
+import { api } from '../lib/api';
+import {
+  getNextContributionPrompt,
+  type ContributionPrompt,
+} from '../lib/contributionPrompts';
 import { Button, FormField } from './ui';
 import Certificate from './Certificate';
+import Turnstile from './Turnstile';
+import VoiceRecorder from './VoiceRecorder';
 import type { Dialect, Source } from '../lib/database.types';
 
-type FormState = 'idle' | 'recording' | 'submitting' | 'success' | 'error';
+type FormState = 'idle' | 'submitting' | 'success' | 'error';
 
 const DIALECTS: { value: Dialect; label: string }[] = [
   { value: 'oriente', label: 'Oriente' },
@@ -23,8 +30,6 @@ const SOURCES: { value: Source; label: string }[] = [
   { value: 'otro', label: 'Otro' },
 ];
 
-const MAX_RECORDING_SECONDS = 60;
-
 export default function ContributionForm() {
   const [state, setState] = useState<FormState>('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -35,139 +40,95 @@ export default function ContributionForm() {
   const [source, setSource] = useState<Source>('hablante_nativo');
   const [consent, setConsent] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [successData, setSuccessData] = useState<{ entryNumber: number; totalCount: number } | null>(null);
-  const [supportsRecording, setSupportsRecording] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileRevision, setTurnstileRevision] = useState(0);
+  const [selectedPrompt, setSelectedPrompt] = useState<ContributionPrompt | null>(null);
+  const [showAudioConfirmation, setShowAudioConfirmation] = useState(false);
+  const audioSectionRef = useRef<HTMLDivElement>(null);
+  const audioConfirmationRef = useRef<HTMLDivElement>(null);
+  const submissionStartedRef = useRef(false);
 
   useEffect(() => {
-    setSupportsRecording(typeof MediaRecorder !== 'undefined');
-  }, []);
+    if (!showAudioConfirmation) return;
+    audioConfirmationRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+  }, [showAudioConfirmation]);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  async function startRecording() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      // Pick a supported mime type — webm for Chrome/Firefox, mp4 for Safari
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : MediaRecorder.isTypeSupported('audio/mp4')
-            ? 'audio/mp4'
-            : '';
-
-      const recorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream);
-      chunksRef.current = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        setAudioBlob(blob);
-        stream.getTracks().forEach((t) => t.stop());
-        if (timerRef.current) clearInterval(timerRef.current);
-        setState('idle');
-      };
-
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setRecordingSeconds(0);
-      setState('recording');
-
-      timerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => {
-          if (prev + 1 >= MAX_RECORDING_SECONDS) {
-            recorder.stop();
-            return prev + 1;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    } catch {
-      setErrorMsg('No se pudo acceder al micrófono. Puedes contribuir solo con texto.');
-    }
-  }
-
-  function stopRecording() {
-    mediaRecorderRef.current?.stop();
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function validateContribution(): boolean {
     if (!mayaText.trim() || !spanishTranslation.trim() || !contributorName.trim()) {
       setErrorMsg('Completa todos los campos obligatorios.');
-      return;
+      return false;
     }
     if (!consent) {
       setErrorMsg('Debes dar tu consentimiento para contribuir.');
+      return false;
+    }
+    if (!turnstileToken) {
+      setErrorMsg('Completa la verificación de seguridad.');
+      return false;
+    }
+    return true;
+  }
+
+  async function submitContribution() {
+    if (!validateContribution() || submissionStartedRef.current) {
+      setShowAudioConfirmation(false);
       return;
     }
+    submissionStartedRef.current = true;
+    setShowAudioConfirmation(false);
 
     setState('submitting');
     setErrorMsg('');
 
     try {
-      let audioUrl: string | null = null;
-
-      // Upload audio via Cloudflare Worker → R2
+      const form = new FormData();
+      form.set('mayaText', mayaText.trim());
+      form.set('spanishTranslation', spanishTranslation.trim());
+      form.set('contributorName', contributorName.trim());
+      form.set('dialect', dialect);
+      form.set('source', source);
+      form.set('consent', 'true');
+      form.set('turnstileToken', turnstileToken);
+      if (selectedPrompt) form.set('promptTopic', selectedPrompt.id);
       if (audioBlob) {
-        try {
-          const workerUrl = import.meta.env.PUBLIC_UPLOAD_WORKER_URL || 'http://localhost:8787';
-          const audioType = (audioBlob.type || 'audio/webm').split(';')[0].trim();
-          const res = await fetch(`${workerUrl}/upload-url`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contentType: audioType }),
-          });
-          if (!res.ok) throw new Error('Upload URL request failed');
-          const { uploadUrl, publicUrl } = await res.json();
-
-          await fetch(uploadUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': audioBlob.type || 'audio/webm' },
-            body: audioBlob,
-          });
-
-          audioUrl = publicUrl;
-        } catch (uploadErr) {
-          console.warn('Audio upload failed, continuing without audio:', uploadErr);
-        }
+        form.set('audio', audioBlob, `grabacion.${audioBlob.type.includes('mp4') ? 'm4a' : 'webm'}`);
       }
 
-      const { error: insertErr } = await supabase.from('contributions').insert({
-        maya_text: mayaText.trim(),
-        spanish_translation: spanishTranslation.trim(),
-        contributor_name: contributorName.trim(),
-        dialect,
-        source,
-        consent_given: true,
-        audio_url: audioUrl,
+      const result = await api<{ entryNumber: number; totalCount: number }>('/api/contributions', {
+        method: 'POST',
+        body: form,
       });
-
-      if (insertErr) throw insertErr;
-
-      // Get count for certificate
-      const { count } = await supabase
-        .from('contributions')
-        .select('*', { count: 'exact', head: true });
-
-      setSuccessData({
-        entryNumber: count ?? 1,
-        totalCount: count ?? 1,
-      });
+      setSuccessData(result);
       setState('success');
     } catch (err) {
+      submissionStartedRef.current = false;
       setErrorMsg(err instanceof Error ? err.message : 'Error al enviar. Intenta de nuevo.');
       setState('error');
+      setTurnstileToken('');
+      setTurnstileRevision((revision) => revision + 1);
     }
+  }
+
+  function handleSubmit(e: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
+    e.preventDefault();
+    if (!validateContribution()) return;
+    if (!audioBlob) {
+      setErrorMsg('');
+      setShowAudioConfirmation(true);
+      return;
+    }
+    void submitContribution();
+  }
+
+  function returnToAudioRecorder() {
+    setShowAudioConfirmation(false);
+    requestAnimationFrame(() => {
+      audioSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      audioSectionRef.current
+        ?.querySelector<HTMLButtonElement>('button:not([disabled])')
+        ?.focus({ preventScroll: true });
+    });
   }
 
   function handleReset() {
@@ -175,9 +136,13 @@ export default function ContributionForm() {
     setMayaText('');
     setSpanishTranslation('');
     setAudioBlob(null);
-    setConsent(false);
+    setSelectedPrompt(null);
+    setShowAudioConfirmation(false);
     setSuccessData(null);
     setErrorMsg('');
+    setTurnstileToken('');
+    setTurnstileRevision((revision) => revision + 1);
+    submissionStartedRef.current = false;
   }
 
   if (state === 'success' && successData) {
@@ -237,6 +202,37 @@ export default function ContributionForm() {
   return (
     <form onSubmit={handleSubmit} className="contribution-form">
       <FormField label="A t'aan" sublabel="Tu texto en maya" htmlFor="maya-text">
+        {!selectedPrompt ? (
+          <button
+            type="button"
+            className="idea-trigger"
+            onClick={() => setSelectedPrompt(getNextContributionPrompt())}
+          >
+            <Lightbulb aria-hidden="true" />
+            ¿No sabes sobre qué contribuir? Te damos una idea
+          </button>
+        ) : (
+          <div className="idea-card" aria-live="polite">
+            <div>
+              <p className="idea-card__eyebrow">Una idea para empezar</p>
+              <p className="idea-card__title">{selectedPrompt.title}</p>
+              <p className="idea-card__prompt">{selectedPrompt.prompt}</p>
+            </div>
+            <div className="idea-card__actions">
+              <button
+                type="button"
+                onClick={() => setSelectedPrompt(getNextContributionPrompt(selectedPrompt.id))}
+              >
+                <RefreshCw aria-hidden="true" />
+                Otra idea
+              </button>
+              <button type="button" onClick={() => setSelectedPrompt(null)}>
+                <X aria-hidden="true" />
+                Aportar libremente
+              </button>
+            </div>
+          </div>
+        )}
         <textarea
           id="maya-text"
           value={mayaText}
@@ -297,31 +293,16 @@ export default function ContributionForm() {
         </FormField>
       </div>
 
-      {/* Audio recording — progressive enhancement */}
-      {supportsRecording && (
-        <FormField label="U juum a t'aan" sublabel="Audio (opcional)">
-          {state === 'recording' ? (
-            <Button
-              type="button"
-              variant="record"
-              recording
-              onClick={stopRecording}
-              aria-label="Detener grabación"
-            >
-              ● {recordingSeconds}s — Detener
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="record"
-              onClick={startRecording}
-              aria-label="Grabar audio / Ts'íib t'aan"
-            >
-              {audioBlob ? '✓ Audio grabado — Grabar de nuevo' : '○ Grabar audio'}
-            </Button>
-          )}
+      <div ref={audioSectionRef} className="audio-section">
+        <FormField label="U juum a t'aan" sublabel="Tu voz · Opcional">
+          <p className={`audio-summary ${audioBlob ? 'audio-summary--included' : ''}`} aria-live="polite">
+            {audioBlob
+              ? 'Audio incluido y listo para enviar'
+              : 'Sin audio · puedes enviar solamente el texto'}
+          </p>
+          <VoiceRecorder onRecordingChange={setAudioBlob} />
         </FormField>
-      )}
+      </div>
 
       <div className="form-field consent-field">
         <label>
@@ -332,11 +313,18 @@ export default function ContributionForm() {
             required
           />
           <span>
-            Acepto que mi contribución sea parte del corpus abierto de maya yucateco
-            bajo licencia Creative Commons.
+            Autorizo almacenar y revisar mi contribución para integrarla al corpus
+            de maya yucateco. La licencia y las condiciones de uso se documentarán
+            por separado antes de cualquier publicación.
           </span>
         </label>
       </div>
+
+      <Turnstile
+        key={turnstileRevision}
+        action="contribution"
+        onToken={setTurnstileToken}
+      />
 
       {errorMsg && (
         <p className="form-error" role="alert">{errorMsg}</p>
@@ -345,10 +333,41 @@ export default function ContributionForm() {
       <Button
         type="submit"
         variant="primary"
-        disabled={state === 'submitting'}
+        disabled={state === 'submitting' || !turnstileToken}
       >
-        {state === 'submitting' ? 'Enviando...' : 'Contribuir'}
+        {state === 'submitting' ? 'Enviando...' : 'Enviar contribución'}
       </Button>
+
+      {showAudioConfirmation && (
+        <div className="audio-confirmation-backdrop">
+          <div
+            ref={audioConfirmationRef}
+            className="audio-confirmation"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="audio-confirmation-title"
+            aria-describedby="audio-confirmation-description"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') returnToAudioRecorder();
+            }}
+          >
+            <p id="audio-confirmation-title" className="audio-confirmation__title">
+              Este aporte no incluye audio
+            </p>
+            <p id="audio-confirmation-description" className="audio-confirmation__description">
+              El audio es opcional, aunque nos ayuda a conservar la pronunciación.
+            </p>
+            <div className="audio-confirmation__actions">
+              <Button type="button" variant="primary" onClick={() => void submitContribution()}>
+                Enviar sin audio
+              </Button>
+              <Button type="button" onClick={returnToAudioRecorder}>
+                Volver y grabar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         .contribution-form {
@@ -360,6 +379,127 @@ export default function ContributionForm() {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: var(--space-3);
+        }
+        .idea-trigger {
+          display: inline-flex;
+          align-items: center;
+          gap: var(--space-2);
+          width: 100%;
+          min-height: 48px;
+          margin-bottom: var(--space-2);
+          padding: var(--space-2) var(--space-3);
+          color: var(--primary);
+          background: transparent;
+          border: 1px solid var(--primary);
+          border-radius: var(--radius);
+          font-weight: 700;
+          text-align: left;
+          cursor: pointer;
+        }
+        .idea-trigger svg,
+        .idea-card__actions svg {
+          width: 20px;
+          height: 20px;
+          flex-shrink: 0;
+        }
+        .idea-card {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-2);
+          margin-bottom: var(--space-2);
+          padding: var(--space-3);
+          background: var(--surface);
+          border-left: 4px solid var(--alive);
+        }
+        .idea-card__eyebrow {
+          color: var(--text-muted);
+          font-family: var(--font-mono);
+          font-size: 0.7rem;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+        }
+        .idea-card__title {
+          margin: var(--space-1) 0;
+          font-family: var(--font-display);
+          font-size: 1.05rem;
+          font-weight: 700;
+        }
+        .idea-card__prompt {
+          color: var(--text-muted);
+          font-size: 0.9rem;
+        }
+        .idea-card__actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: var(--space-1) var(--space-3);
+        }
+        .idea-card__actions button {
+          display: inline-flex;
+          align-items: center;
+          min-height: 48px;
+          gap: var(--space-1);
+          padding: var(--space-1) 0;
+          color: var(--primary);
+          background: transparent;
+          border: 0;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .audio-section {
+          scroll-margin: var(--space-5);
+        }
+        .audio-summary {
+          margin-bottom: var(--space-2);
+          color: var(--text-muted);
+          font-size: 0.85rem;
+          font-weight: 600;
+        }
+        .audio-summary--included {
+          color: var(--success);
+        }
+        .audio-confirmation-backdrop {
+          position: fixed;
+          z-index: 1000;
+          inset: 0;
+          display: grid;
+          place-items: end center;
+          padding: var(--space-3);
+          background: color-mix(in srgb, var(--text) 55%, transparent);
+        }
+        .audio-confirmation {
+          width: min(100%, 520px);
+          padding: var(--space-4);
+          background: var(--bg);
+          border-top: 4px solid var(--alive);
+        }
+        .audio-confirmation__title {
+          font-family: var(--font-display);
+          font-size: 1.25rem;
+          font-weight: 700;
+        }
+        .audio-confirmation__description {
+          margin: var(--space-2) 0 var(--space-4);
+          color: var(--text-muted);
+        }
+        .audio-confirmation__actions {
+          display: grid;
+          gap: var(--space-2);
+        }
+        .audio-confirmation__actions .btn {
+          width: 100%;
+        }
+        @media (min-width: 640px) {
+          .audio-confirmation-backdrop {
+            place-items: center;
+          }
+          .audio-confirmation__actions {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .audio-section {
+            scroll-behavior: auto;
+          }
         }
         @media (max-width: 480px) {
           .form-row {

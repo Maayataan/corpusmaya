@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import { Button } from './ui';
 
 type BadgeType = 'speaker' | 'ally';
 
@@ -21,8 +20,8 @@ const COPY = {
     invite: 'Ayúdanos a registrar la voz de nuestro pueblo maya, súmate en:',
     accent: '#1B6B5A',
     accentBottom: '#C4603C',
-    shareText: (n: string) =>
-      `Me registré como hablante en maayataan — plataforma de corpus abierto de maya yucateco. ¿Hablas maya? Súmate: ${SITE_URL}/sumate`,
+    shareText: (name: string) =>
+      `${name} se registró como hablante en maayataan — plataforma de corpus abierto de maya yucateco. ¿Hablas maya? Súmate: ${SITE_URL}/sumate`,
   },
   ally: {
     heroMaya: "Ko'one'ex",
@@ -34,8 +33,8 @@ const COPY = {
     invite: '¿Quieres contribuir a preservar el maya yucateco? Súmate en:',
     accent: '#C4603C',
     accentBottom: '#1B6B5A',
-    shareText: (n: string) =>
-      `Me sumé como aliado a maayataan — plataforma de corpus abierto de maya yucateco. ¿Quieres ayudar? Únete: ${SITE_URL}/sumate`,
+    shareText: (name: string) =>
+      `${name} se sumó como aliado a maayataan — plataforma de corpus abierto de maya yucateco. ¿Quieres ayudar? Únete: ${SITE_URL}/sumate`,
   },
 };
 
