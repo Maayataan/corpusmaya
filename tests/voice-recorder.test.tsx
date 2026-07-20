@@ -34,9 +34,11 @@ describe('voice recorder helpers', () => {
     const loadBlob = vi.fn(() => new Promise<void>((resolve) => {
       finishLoading = resolve;
     }));
+    const setTime = vi.fn();
     const setOptions = vi.fn();
     const player = {
       loadBlob,
+      setTime,
       setOptions,
       getDuration: () => 87,
     };
@@ -46,6 +48,7 @@ describe('voice recorder helpers', () => {
 
     finishLoading?.();
     await expect(loading).resolves.toBe(87_000);
+    expect(setTime).toHaveBeenCalledWith(0);
     expect(setOptions).toHaveBeenCalledWith({ interact: true, dragToSeek: true });
   });
 });

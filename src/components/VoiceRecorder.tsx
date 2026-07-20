@@ -12,10 +12,11 @@ interface VoiceRecorderProps {
 
 export const DEFAULT_MAX_SECONDS = 120;
 
-type RecordedAudioPlayer = Pick<WaveSurfer, 'getDuration' | 'loadBlob' | 'setOptions'>;
+type RecordedAudioPlayer = Pick<WaveSurfer, 'getDuration' | 'loadBlob' | 'setOptions' | 'setTime'>;
 
 export async function loadRecordedAudio(player: RecordedAudioPlayer, blob: Blob): Promise<number> {
   await player.loadBlob(blob);
+  player.setTime(0);
   player.setOptions({ interact: true, dragToSeek: true });
   return player.getDuration() * 1000;
 }
@@ -389,7 +390,15 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = DEFAULT_
           border-radius: var(--radius);
         }
         .voice-note__content {
+          grid-column: 2;
           min-width: 0;
+          width: 100%;
+        }
+        .voice-note__play {
+          grid-column: 1;
+        }
+        .voice-note__delete {
+          grid-column: 3;
         }
         .voice-note__waveform {
           min-height: 72px;
