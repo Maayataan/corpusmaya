@@ -3,11 +3,21 @@ import { Mic, Pause, Play, RotateCcw, Square, Trash2 } from 'lucide-react';
 import type WaveSurfer from 'wavesurfer.js';
 import type RecordPlugin from 'wavesurfer.js/plugins/record';
 
-type RecorderStatus = 'loading' | 'ready' | 'requesting' | 'recording' | 'recorded' | 'error' | 'unsupported';
+type RecorderStatus = 'loading' | 'ready' | 'requesting' | 'recording' | 'processing' | 'recorded' | 'error' | 'unsupported';
 
 interface VoiceRecorderProps {
   onRecordingChange: (recording: Blob | null) => void;
   maxSeconds?: number;
+}
+
+export const DEFAULT_MAX_SECONDS = 120;
+
+type RecordedAudioPlayer = Pick<WaveSurfer, 'getDuration' | 'loadBlob' | 'setOptions'>;
+
+export async function loadRecordedAudio(player: RecordedAudioPlayer, blob: Blob): Promise<number> {
+  await player.loadBlob(blob);
+  player.setOptions({ interact: true, dragToSeek: true });
+  return player.getDuration() * 1000;
 }
 
 export function formatRecordingTime(durationMs: number): string {
@@ -36,7 +46,7 @@ function preferredMimeType(): string | undefined {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type));
 }
 
-export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: VoiceRecorderProps) {
+export default function VoiceRecorder({ onRecordingChange, maxSeconds = DEFAULT_MAX_SECONDS }: VoiceRecorderProps) {
   const waveformRef = useRef<HTMLDivElement>(null);
   const waveSurferRef = useRef<WaveSurfer | null>(null);
   const recordPluginRef = useRef<RecordPlugin | null>(null);
@@ -44,6 +54,7 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
   const hasRecordingRef = useRef(false);
   const [status, setStatus] = useState<RecorderStatus>('loading');
   const [durationMs, setDurationMs] = useState(0);
+  const [playbackPositionMs, setPlaybackPositionMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -89,7 +100,7 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
           audioBitsPerSecond: 64_000,
           continuousWaveform: true,
           continuousWaveformDuration: maxSeconds,
-          renderRecordedAudio: true,
+          renderRecordedAudio: false,
           mediaRecorderTimeslice: 250,
         }));
 
@@ -103,6 +114,7 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
             hasRecordingRef.current = false;
             onRecordingChange(null);
             setDurationMs(0);
+            setPlaybackPositionMs(0);
             setStatus('recording');
           }),
           record.on('record-progress', (duration) => {
@@ -120,13 +132,26 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
             }
             hasRecordingRef.current = true;
             onRecordingChange(blob);
-            setDurationMs(record.getDuration());
-            setStatus('recorded');
-            queueMicrotask(() => wavesurfer.setOptions({ interact: true }));
+            const recordedDuration = record.getDuration();
+            setDurationMs(recordedDuration);
+            setPlaybackPositionMs(0);
+            setStatus('processing');
+            void loadRecordedAudio(wavesurfer, blob)
+              .then((decodedDuration) => {
+                if (!hasRecordingRef.current) return;
+                setDurationMs(decodedDuration || recordedDuration);
+                setStatus('recorded');
+              })
+              .catch(() => {
+                if (!hasRecordingRef.current) return;
+                setErrorMessage('La grabación se guardó, pero no pudimos preparar la reproducción. Intenta grabarla de nuevo.');
+                setStatus('recorded');
+              });
           }),
           wavesurfer.on('play', () => setIsPlaying(true)),
           wavesurfer.on('pause', () => setIsPlaying(false)),
           wavesurfer.on('finish', () => setIsPlaying(false)),
+          wavesurfer.on('timeupdate', (time) => setPlaybackPositionMs(time * 1000)),
         ];
         setStatus('ready');
       } catch (error) {
@@ -138,6 +163,7 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
     void setup();
     return () => {
       cancelled = true;
+      hasRecordingRef.current = false;
       unsubscribe.forEach((off) => off());
       waveSurferRef.current?.destroy();
       waveSurferRef.current = null;
@@ -188,13 +214,40 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
     hasRecordingRef.current = false;
     onRecordingChange(null);
     setDurationMs(0);
+    setPlaybackPositionMs(0);
     setIsPlaying(false);
     setErrorMessage('');
     setStatus('ready');
   }
 
   async function togglePlayback() {
-    await waveSurferRef.current?.playPause();
+    try {
+      await waveSurferRef.current?.playPause();
+    } catch {
+      setErrorMessage('No pudimos reproducir el audio. Intenta grabarlo de nuevo.');
+    }
+  }
+
+  function handleWaveformKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    const wavesurfer = waveSurferRef.current;
+    if (!wavesurfer || status !== 'recorded') return;
+    const step = event.shiftKey ? 10 : 5;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      wavesurfer.setTime(Math.max(0, wavesurfer.getCurrentTime() - step));
+    }
+    if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      wavesurfer.setTime(Math.min(wavesurfer.getDuration(), wavesurfer.getCurrentTime() + step));
+    }
+    if (event.key === 'Home') {
+      event.preventDefault();
+      wavesurfer.setTime(0);
+    }
+    if (event.key === 'End') {
+      event.preventDefault();
+      wavesurfer.setTime(wavesurfer.getDuration());
+    }
   }
 
   const formattedDuration = formatRecordingTime(durationMs);
@@ -211,7 +264,9 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
   return (
     <div className={`voice-recorder voice-recorder--${status}`} role="group" aria-label="Grabadora de voz">
       <p className="voice-recorder__hint">
-        Di la misma frase en maya. Podrás escucharla antes de enviarla.
+        {status === 'recorded'
+          ? 'Toca o arrastra la onda para escuchar desde otro punto.'
+          : 'Di la misma frase en maya. Podrás escucharla antes de enviarla.'}
       </p>
 
       <div className="voice-note">
@@ -227,7 +282,21 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
         )}
 
         <div className="voice-note__content">
-          <div ref={waveformRef} className="voice-note__waveform" aria-hidden="true" />
+          <div
+            ref={waveformRef}
+            className="voice-note__waveform"
+            role={status === 'recorded' ? 'slider' : undefined}
+            tabIndex={status === 'recorded' ? 0 : -1}
+            aria-hidden={status !== 'recorded'}
+            aria-label={status === 'recorded' ? 'Posición de reproducción' : undefined}
+            aria-valuemin={status === 'recorded' ? 0 : undefined}
+            aria-valuemax={status === 'recorded' ? Math.round(durationMs / 1000) : undefined}
+            aria-valuenow={status === 'recorded' ? Math.round(playbackPositionMs / 1000) : undefined}
+            aria-valuetext={status === 'recorded'
+              ? `${formatRecordingTime(playbackPositionMs)} de ${formattedDuration}`
+              : undefined}
+            onKeyDown={handleWaveformKeyDown}
+          />
           <div className="voice-note__meta" aria-live="polite">
             <span>
               {status === 'recording' && <span className="voice-note__live-dot" aria-hidden="true" />}
@@ -235,11 +304,14 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
               {status === 'ready' && 'Lista para grabar'}
               {status === 'requesting' && 'Esperando permiso del micrófono…'}
               {status === 'recording' && 'Grabando'}
+              {status === 'processing' && 'Preparando reproducción…'}
               {status === 'recorded' && 'Grabación lista'}
               {status === 'error' && 'No se pudo grabar'}
             </span>
             <span className="voice-note__time">
-              {formattedDuration} {status === 'recording' && `/ ${formattedLimit}`}
+              {status === 'recorded'
+                ? `${formatRecordingTime(playbackPositionMs)} / ${formattedDuration}`
+                : `${formattedDuration}${status === 'recording' ? ` / ${formattedLimit}` : ''}`}
             </span>
           </div>
         </div>
@@ -269,6 +341,11 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
           <button type="button" className="voice-recorder__primary" disabled>
             <Mic aria-hidden="true" />
             Abriendo micrófono…
+          </button>
+        )}
+        {status === 'processing' && (
+          <button type="button" className="voice-recorder__primary" disabled>
+            Preparando audio…
           </button>
         )}
         {status === 'recording' && (
@@ -318,6 +395,10 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = 60 }: Vo
           min-height: 72px;
           position: relative;
           overflow: hidden;
+        }
+        .voice-recorder--recorded .voice-note__waveform {
+          cursor: ew-resize;
+          touch-action: none;
         }
         .voice-note__waveform:empty::after {
           content: '';

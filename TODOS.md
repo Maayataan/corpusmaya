@@ -31,7 +31,7 @@
 ### Physical-device audio QA matrix
 **What:** Verify microphone permission, recording, preview, re-record, cancellation, and upload on current Safari/iOS and Chrome/Android with real devices.
 **Why:** Headless Chromium verifies layout, errors, and browser behavior but cannot validate real microphone capture or mobile OS permission prompts.
-**Context:** Deferred from UX review FINDING-006 (2026-07-19). Cover a denied permission, no microphone, an interrupted recording, and the 60-second automatic stop.
+**Context:** Deferred from UX review FINDING-006 (2026-07-19). Cover a denied permission, no microphone, an interrupted recording, playback seeking, and the 120-second automatic stop.
 **Effort:** S (human) → S (CC)
 **Depends on:** Preview or production URL over HTTPS and access to iOS/Android devices
 **Target:** Before announcing the new recorder publicly
