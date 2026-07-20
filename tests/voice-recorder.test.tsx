@@ -1,10 +1,13 @@
 import { describe, expect, test, vi } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
   DEFAULT_MAX_SECONDS,
   formatRecordingTime,
   getRecordingErrorMessage,
   loadRecordedAudio,
+  shouldShowVoiceNote,
 } from '../src/components/VoiceRecorder';
+import VoiceRecorder from '../src/components/VoiceRecorder';
 
 describe('voice recorder helpers', () => {
   test('formats elapsed recording time', () => {
@@ -12,6 +15,23 @@ describe('voice recorder helpers', () => {
     expect(formatRecordingTime(59_999)).toBe('0:59');
     expect(formatRecordingTime(60_000)).toBe('1:00');
     expect(formatRecordingTime(DEFAULT_MAX_SECONDS * 1000)).toBe('2:00');
+  });
+
+  test('shows the voice note surface only after recording starts', () => {
+    expect(shouldShowVoiceNote('loading')).toBe(false);
+    expect(shouldShowVoiceNote('ready')).toBe(false);
+    expect(shouldShowVoiceNote('requesting')).toBe(false);
+    expect(shouldShowVoiceNote('recording')).toBe(true);
+    expect(shouldShowVoiceNote('processing')).toBe(true);
+    expect(shouldShowVoiceNote('recorded')).toBe(true);
+  });
+
+  test('keeps the hidden waveform mount available while the recorder initializes', () => {
+    const html = renderToStaticMarkup(<VoiceRecorder onRecordingChange={() => undefined} />);
+
+    expect(html).toContain('voice-note--hidden');
+    expect(html).toContain('voice-note__waveform');
+    expect(html).toContain('Preparando grabadora…');
   });
 
   test('explains microphone permission failures', () => {

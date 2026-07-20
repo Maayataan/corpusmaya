@@ -8,6 +8,7 @@ interface TurnstileApi {
       action: string;
       theme: 'auto';
       size: 'flexible';
+      appearance: 'interaction-only';
       callback: (token: string) => void;
       'expired-callback': () => void;
       'error-callback': () => void;
@@ -60,10 +61,12 @@ function loadScript(): Promise<void> {
 export default function Turnstile({ action, onToken }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loadError, setLoadError] = useState(!siteKey);
+  const [challengeVisible, setChallengeVisible] = useState(false);
 
   useEffect(() => {
     if (!siteKey || !containerRef.current) return;
     let widgetId: string | null = null;
+    let observer: MutationObserver | null = null;
     let cancelled = false;
 
     loadScript()
@@ -74,25 +77,40 @@ export default function Turnstile({ action, onToken }: Props) {
           action,
           theme: 'auto',
           size: 'flexible',
-          callback: onToken,
-          'expired-callback': () => onToken(''),
+          appearance: 'interaction-only',
+          callback: (token) => {
+            setChallengeVisible(false);
+            onToken(token);
+          },
+          'expired-callback': () => {
+            setChallengeVisible(false);
+            onToken('');
+          },
           'error-callback': () => {
+            setChallengeVisible(false);
             onToken('');
             setLoadError(true);
           },
         });
+        const updateChallengeVisibility = () => {
+          setChallengeVisible(Boolean(containerRef.current?.querySelector('iframe')));
+        };
+        observer = new MutationObserver(updateChallengeVisibility);
+        observer.observe(containerRef.current, { childList: true, subtree: true });
+        updateChallengeVisibility();
       })
       .catch(() => setLoadError(true));
 
     return () => {
       cancelled = true;
+      observer?.disconnect();
       if (widgetId && window.turnstile) window.turnstile.remove(widgetId);
       onToken('');
     };
   }, [action, onToken]);
 
   return (
-    <div className="turnstile-field">
+    <div className={`turnstile-field ${challengeVisible ? 'turnstile-field--visible' : ''}`}>
       <div ref={containerRef} />
       {loadError && (
         <p className="form-error" role="alert">
@@ -101,8 +119,14 @@ export default function Turnstile({ action, onToken }: Props) {
       )}
       <style>{`
         .turnstile-field {
-          min-height: 65px;
-          margin: var(--space-3) 0;
+          min-height: 0;
+        }
+        .turnstile-field:not(.turnstile-field--visible) > div {
+          height: 0 !important;
+          overflow: hidden;
+        }
+        .turnstile-field--visible > div:not(:empty) {
+          margin: var(--space-2) 0;
         }
       `}</style>
     </div>

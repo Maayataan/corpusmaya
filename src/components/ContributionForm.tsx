@@ -1,5 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Lightbulb, RefreshCw, X } from 'lucide-react';
 import { api } from '../lib/api';
+import {
+  getNextContributionPrompt,
+  type ContributionPrompt,
+} from '../lib/contributionPrompts';
 import { Button, FormField } from './ui';
 import Certificate from './Certificate';
 import Turnstile from './Turnstile';
@@ -38,21 +43,40 @@ export default function ContributionForm() {
   const [successData, setSuccessData] = useState<{ entryNumber: number; totalCount: number } | null>(null);
   const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileRevision, setTurnstileRevision] = useState(0);
+  const [selectedPrompt, setSelectedPrompt] = useState<ContributionPrompt | null>(null);
+  const [showAudioConfirmation, setShowAudioConfirmation] = useState(false);
+  const audioSectionRef = useRef<HTMLDivElement>(null);
+  const audioConfirmationRef = useRef<HTMLDivElement>(null);
+  const submissionStartedRef = useRef(false);
 
-  async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
-    e.preventDefault();
+  useEffect(() => {
+    if (!showAudioConfirmation) return;
+    audioConfirmationRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+  }, [showAudioConfirmation]);
+
+  function validateContribution(): boolean {
     if (!mayaText.trim() || !spanishTranslation.trim() || !contributorName.trim()) {
       setErrorMsg('Completa todos los campos obligatorios.');
-      return;
+      return false;
     }
     if (!consent) {
       setErrorMsg('Debes dar tu consentimiento para contribuir.');
-      return;
+      return false;
     }
     if (!turnstileToken) {
       setErrorMsg('Completa la verificación de seguridad.');
+      return false;
+    }
+    return true;
+  }
+
+  async function submitContribution() {
+    if (!validateContribution() || submissionStartedRef.current) {
+      setShowAudioConfirmation(false);
       return;
     }
+    submissionStartedRef.current = true;
+    setShowAudioConfirmation(false);
 
     setState('submitting');
     setErrorMsg('');
@@ -66,6 +90,7 @@ export default function ContributionForm() {
       form.set('source', source);
       form.set('consent', 'true');
       form.set('turnstileToken', turnstileToken);
+      if (selectedPrompt) form.set('promptTopic', selectedPrompt.id);
       if (audioBlob) {
         form.set('audio', audioBlob, `grabacion.${audioBlob.type.includes('mp4') ? 'm4a' : 'webm'}`);
       }
@@ -77,6 +102,7 @@ export default function ContributionForm() {
       setSuccessData(result);
       setState('success');
     } catch (err) {
+      submissionStartedRef.current = false;
       setErrorMsg(err instanceof Error ? err.message : 'Error al enviar. Intenta de nuevo.');
       setState('error');
       setTurnstileToken('');
@@ -84,16 +110,39 @@ export default function ContributionForm() {
     }
   }
 
+  function handleSubmit(e: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
+    e.preventDefault();
+    if (!validateContribution()) return;
+    if (!audioBlob) {
+      setErrorMsg('');
+      setShowAudioConfirmation(true);
+      return;
+    }
+    void submitContribution();
+  }
+
+  function returnToAudioRecorder() {
+    setShowAudioConfirmation(false);
+    requestAnimationFrame(() => {
+      audioSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      audioSectionRef.current
+        ?.querySelector<HTMLButtonElement>('button:not([disabled])')
+        ?.focus({ preventScroll: true });
+    });
+  }
+
   function handleReset() {
     setState('idle');
     setMayaText('');
     setSpanishTranslation('');
     setAudioBlob(null);
-    setConsent(false);
+    setSelectedPrompt(null);
+    setShowAudioConfirmation(false);
     setSuccessData(null);
     setErrorMsg('');
     setTurnstileToken('');
     setTurnstileRevision((revision) => revision + 1);
+    submissionStartedRef.current = false;
   }
 
   if (state === 'success' && successData) {
@@ -153,6 +202,37 @@ export default function ContributionForm() {
   return (
     <form onSubmit={handleSubmit} className="contribution-form">
       <FormField label="A t'aan" sublabel="Tu texto en maya" htmlFor="maya-text">
+        {!selectedPrompt ? (
+          <button
+            type="button"
+            className="idea-trigger"
+            onClick={() => setSelectedPrompt(getNextContributionPrompt())}
+          >
+            <Lightbulb aria-hidden="true" />
+            ¿No sabes sobre qué contribuir? Te damos una idea
+          </button>
+        ) : (
+          <div className="idea-card" aria-live="polite">
+            <div>
+              <p className="idea-card__eyebrow">Una idea para empezar</p>
+              <p className="idea-card__title">{selectedPrompt.title}</p>
+              <p className="idea-card__prompt">{selectedPrompt.prompt}</p>
+            </div>
+            <div className="idea-card__actions">
+              <button
+                type="button"
+                onClick={() => setSelectedPrompt(getNextContributionPrompt(selectedPrompt.id))}
+              >
+                <RefreshCw aria-hidden="true" />
+                Otra idea
+              </button>
+              <button type="button" onClick={() => setSelectedPrompt(null)}>
+                <X aria-hidden="true" />
+                Aportar libremente
+              </button>
+            </div>
+          </div>
+        )}
         <textarea
           id="maya-text"
           value={mayaText}
@@ -162,10 +242,6 @@ export default function ContributionForm() {
           maxLength={2000}
           required
         />
-      </FormField>
-
-      <FormField label="U juum a t'aan" sublabel="Tu voz (opcional)">
-        <VoiceRecorder onRecordingChange={setAudioBlob} />
       </FormField>
 
       <FormField label="U tsikbal ich kastelan t'aan" sublabel="Traducción al español" htmlFor="spanish-translation">
@@ -217,6 +293,17 @@ export default function ContributionForm() {
         </FormField>
       </div>
 
+      <div ref={audioSectionRef} className="audio-section">
+        <FormField label="U juum a t'aan" sublabel="Tu voz · Opcional">
+          <p className={`audio-summary ${audioBlob ? 'audio-summary--included' : ''}`} aria-live="polite">
+            {audioBlob
+              ? 'Audio incluido y listo para enviar'
+              : 'Sin audio · puedes enviar solamente el texto'}
+          </p>
+          <VoiceRecorder onRecordingChange={setAudioBlob} />
+        </FormField>
+      </div>
+
       <div className="form-field consent-field">
         <label>
           <input
@@ -248,8 +335,39 @@ export default function ContributionForm() {
         variant="primary"
         disabled={state === 'submitting' || !turnstileToken}
       >
-        {state === 'submitting' ? 'Enviando...' : 'Contribuir'}
+        {state === 'submitting' ? 'Enviando...' : 'Enviar contribución'}
       </Button>
+
+      {showAudioConfirmation && (
+        <div className="audio-confirmation-backdrop">
+          <div
+            ref={audioConfirmationRef}
+            className="audio-confirmation"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="audio-confirmation-title"
+            aria-describedby="audio-confirmation-description"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') returnToAudioRecorder();
+            }}
+          >
+            <p id="audio-confirmation-title" className="audio-confirmation__title">
+              Este aporte no incluye audio
+            </p>
+            <p id="audio-confirmation-description" className="audio-confirmation__description">
+              El audio es opcional, aunque nos ayuda a conservar la pronunciación.
+            </p>
+            <div className="audio-confirmation__actions">
+              <Button type="button" variant="primary" onClick={() => void submitContribution()}>
+                Enviar sin audio
+              </Button>
+              <Button type="button" onClick={returnToAudioRecorder}>
+                Volver y grabar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         .contribution-form {
@@ -261,6 +379,127 @@ export default function ContributionForm() {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: var(--space-3);
+        }
+        .idea-trigger {
+          display: inline-flex;
+          align-items: center;
+          gap: var(--space-2);
+          width: 100%;
+          min-height: 48px;
+          margin-bottom: var(--space-2);
+          padding: var(--space-2) var(--space-3);
+          color: var(--primary);
+          background: transparent;
+          border: 1px solid var(--primary);
+          border-radius: var(--radius);
+          font-weight: 700;
+          text-align: left;
+          cursor: pointer;
+        }
+        .idea-trigger svg,
+        .idea-card__actions svg {
+          width: 20px;
+          height: 20px;
+          flex-shrink: 0;
+        }
+        .idea-card {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-2);
+          margin-bottom: var(--space-2);
+          padding: var(--space-3);
+          background: var(--surface);
+          border-left: 4px solid var(--alive);
+        }
+        .idea-card__eyebrow {
+          color: var(--text-muted);
+          font-family: var(--font-mono);
+          font-size: 0.7rem;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+        }
+        .idea-card__title {
+          margin: var(--space-1) 0;
+          font-family: var(--font-display);
+          font-size: 1.05rem;
+          font-weight: 700;
+        }
+        .idea-card__prompt {
+          color: var(--text-muted);
+          font-size: 0.9rem;
+        }
+        .idea-card__actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: var(--space-1) var(--space-3);
+        }
+        .idea-card__actions button {
+          display: inline-flex;
+          align-items: center;
+          min-height: 48px;
+          gap: var(--space-1);
+          padding: var(--space-1) 0;
+          color: var(--primary);
+          background: transparent;
+          border: 0;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .audio-section {
+          scroll-margin: var(--space-5);
+        }
+        .audio-summary {
+          margin-bottom: var(--space-2);
+          color: var(--text-muted);
+          font-size: 0.85rem;
+          font-weight: 600;
+        }
+        .audio-summary--included {
+          color: var(--success);
+        }
+        .audio-confirmation-backdrop {
+          position: fixed;
+          z-index: 1000;
+          inset: 0;
+          display: grid;
+          place-items: end center;
+          padding: var(--space-3);
+          background: color-mix(in srgb, var(--text) 55%, transparent);
+        }
+        .audio-confirmation {
+          width: min(100%, 520px);
+          padding: var(--space-4);
+          background: var(--bg);
+          border-top: 4px solid var(--alive);
+        }
+        .audio-confirmation__title {
+          font-family: var(--font-display);
+          font-size: 1.25rem;
+          font-weight: 700;
+        }
+        .audio-confirmation__description {
+          margin: var(--space-2) 0 var(--space-4);
+          color: var(--text-muted);
+        }
+        .audio-confirmation__actions {
+          display: grid;
+          gap: var(--space-2);
+        }
+        .audio-confirmation__actions .btn {
+          width: 100%;
+        }
+        @media (min-width: 640px) {
+          .audio-confirmation-backdrop {
+            place-items: center;
+          }
+          .audio-confirmation__actions {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .audio-section {
+            scroll-behavior: auto;
+          }
         }
         @media (max-width: 480px) {
           .form-row {

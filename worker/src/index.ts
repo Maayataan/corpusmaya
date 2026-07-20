@@ -4,6 +4,7 @@ import type { Env } from './types';
 import {
   ALLY_ROLES,
   DIALECTS,
+  PROMPT_TOPICS,
   SOURCES,
   STATUSES,
   booleanValue,
@@ -34,6 +35,7 @@ interface ContributionRow {
   id: string;
   maya_text: string;
   spanish_translation: string;
+  prompt_topic: string | null;
   audio_key: string | null;
   contributor_name: string;
   consent_given: number;
@@ -164,7 +166,7 @@ async function getCorpus(env: Env, url: URL): Promise<Response> {
 
   bindings.push(PAGE_SIZE + 1, page * PAGE_SIZE);
   const result = await env.DB.prepare(
-    `SELECT id, maya_text, spanish_translation, audio_key, contributor_name,
+    `SELECT id, maya_text, spanish_translation, prompt_topic, audio_key, contributor_name,
       consent_given, dialect, source, status, created_at
      FROM contributions
      WHERE ${conditions.join(' AND ')}
@@ -191,6 +193,10 @@ async function createContribution(request: Request, env: Env): Promise<Response>
   const id = crypto.randomUUID();
   const mayaText = requiredString(form.get('mayaText'), 'El texto en maya', 2000);
   const spanishTranslation = requiredString(form.get('spanishTranslation'), 'La traducción', 2000);
+  const promptTopicParam = optionalString(form.get('promptTopic'), 'El tema sugerido', 50);
+  const promptTopic = promptTopicParam
+    ? oneOf(promptTopicParam, PROMPT_TOPICS, 'El tema sugerido')
+    : null;
   const contributorName = requiredString(form.get('contributorName'), 'El nombre', 120);
   const dialect = oneOf(form.get('dialect'), DIALECTS, 'La variante dialectal');
   const source = oneOf(form.get('source'), SOURCES, 'La fuente');
@@ -215,10 +221,10 @@ async function createContribution(request: Request, env: Env): Promise<Response>
     const results = await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO contributions (
-          id, maya_text, spanish_translation, audio_key, contributor_name,
+          id, maya_text, spanish_translation, prompt_topic, audio_key, contributor_name,
           consent_given, dialect, source, status
-        ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, 'pending')`,
-      ).bind(id, mayaText, spanishTranslation, audioKey, contributorName, dialect, source),
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 'pending')`,
+      ).bind(id, mayaText, spanishTranslation, promptTopic, audioKey, contributorName, dialect, source),
       env.DB.prepare('SELECT COUNT(*) AS count FROM contributions'),
     ]);
     const countRow = results[1].results[0] as { count?: number } | undefined;
@@ -303,7 +309,7 @@ async function createAlly(request: Request, env: Env): Promise<Response> {
 async function getAdminContributions(env: Env, url: URL): Promise<Response> {
   const status = oneOf(url.searchParams.get('status') || 'pending', STATUSES, 'El estado');
   const result = await env.DB.prepare(
-    `SELECT id, maya_text, spanish_translation, audio_key, contributor_name,
+    `SELECT id, maya_text, spanish_translation, prompt_topic, audio_key, contributor_name,
       consent_given, dialect, source, status, created_at
      FROM contributions WHERE status = ?
      ORDER BY created_at ${status === 'pending' ? 'ASC' : 'DESC'} LIMIT 100`,
@@ -392,7 +398,7 @@ async function exportCorpus(env: Env, url: URL): Promise<Response> {
   const format = url.searchParams.get('format') || 'jsonl';
   if (!['jsonl', 'csv'].includes(format)) throw new HttpError(400, 'El formato no es válido.');
   const result = await env.DB.prepare(
-    `SELECT id, maya_text, spanish_translation, dialect, source, contributor_name, created_at,
+    `SELECT id, maya_text, spanish_translation, prompt_topic, dialect, source, contributor_name, created_at,
       CASE WHEN audio_key IS NULL THEN NULL ELSE '/api/audio/' || audio_key END AS audio_url,
       consent_scope, license_code, governance_label
      FROM contributions WHERE status = 'approved' ORDER BY created_at ASC`,
@@ -409,7 +415,7 @@ async function exportCorpus(env: Env, url: URL): Promise<Response> {
     });
   }
 
-  const columns = ['id', 'maya_text', 'spanish_translation', 'dialect', 'source', 'contributor_name', 'created_at', 'audio_url', 'consent_scope', 'license_code', 'governance_label'];
+  const columns = ['id', 'maya_text', 'spanish_translation', 'prompt_topic', 'dialect', 'source', 'contributor_name', 'created_at', 'audio_url', 'consent_scope', 'license_code', 'governance_label'];
   const lines = [columns.join(',')];
   for (const row of result.results) {
     lines.push(columns.map((column) => csvCell(row[column])).join(','));

@@ -5,6 +5,7 @@ export const DIALECTS = ['oriente', 'noroccidente', 'centro', 'sur', 'costa', 'o
 export const SOURCES = ['hablante_nativo', 'estudiante', 'academico', 'evento', 'otro'] as const;
 export const ALLY_ROLES = ['desarrollo', 'diseño', 'api_datos', 'donacion', 'institucion_educativa', 'otro'] as const;
 export const STATUSES = ['pending', 'approved', 'rejected'] as const;
+export const PROMPT_TOPICS = ['daily_life', 'expressions', 'memories', 'nature', 'traditions'] as const;
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE = /^\d{10}$/;

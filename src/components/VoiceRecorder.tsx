@@ -3,7 +3,7 @@ import { Mic, Pause, Play, RotateCcw, Square, Trash2 } from 'lucide-react';
 import type WaveSurfer from 'wavesurfer.js';
 import type RecordPlugin from 'wavesurfer.js/plugins/record';
 
-type RecorderStatus = 'loading' | 'ready' | 'requesting' | 'recording' | 'processing' | 'recorded' | 'error' | 'unsupported';
+export type RecorderStatus = 'loading' | 'ready' | 'requesting' | 'recording' | 'processing' | 'recorded' | 'error' | 'unsupported';
 
 interface VoiceRecorderProps {
   onRecordingChange: (recording: Blob | null) => void;
@@ -11,6 +11,10 @@ interface VoiceRecorderProps {
 }
 
 export const DEFAULT_MAX_SECONDS = 120;
+
+export function shouldShowVoiceNote(status: RecorderStatus): boolean {
+  return status === 'recording' || status === 'processing' || status === 'recorded';
+}
 
 type RecordedAudioPlayer = Pick<WaveSurfer, 'getDuration' | 'loadBlob' | 'setOptions' | 'setTime'>;
 
@@ -253,6 +257,7 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = DEFAULT_
 
   const formattedDuration = formatRecordingTime(durationMs);
   const formattedLimit = formatRecordingTime(maxSeconds * 1000);
+  const showVoiceNote = shouldShowVoiceNote(status);
 
   if (status === 'unsupported') {
     return (
@@ -264,13 +269,16 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = DEFAULT_
 
   return (
     <div className={`voice-recorder voice-recorder--${status}`} role="group" aria-label="Grabadora de voz">
-      <p className="voice-recorder__hint">
-        {status === 'recorded'
-          ? 'Toca o arrastra la onda para escuchar desde otro punto.'
-          : 'Di la misma frase en maya. Podrás escucharla antes de enviarla.'}
-      </p>
+      {status === 'recorded' && (
+        <p className="voice-recorder__hint">
+          Toca o arrastra la onda para escuchar desde otro punto.
+        </p>
+      )}
 
-      <div className="voice-note">
+      <div
+        className={`voice-note ${showVoiceNote ? '' : 'voice-note--hidden'}`}
+        aria-hidden={!showVoiceNote}
+      >
         {status === 'recorded' && (
           <button
             type="button"
@@ -332,6 +340,12 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = DEFAULT_
       {errorMessage && <p className="voice-recorder__error" role="alert">{errorMessage}</p>}
 
       <div className="voice-recorder__actions">
+        {status === 'loading' && (
+          <button type="button" className="voice-recorder__primary" disabled>
+            <Mic aria-hidden="true" />
+            Preparando grabadora…
+          </button>
+        )}
         {(status === 'ready' || status === 'error') && (
           <button type="button" className="voice-recorder__primary" onClick={startRecording}>
             <Mic aria-hidden="true" />
@@ -389,10 +403,17 @@ export default function VoiceRecorder({ onRecordingChange, maxSeconds = DEFAULT_
           border: 1px solid var(--surface);
           border-radius: var(--radius);
         }
+        .voice-note--hidden {
+          display: none;
+        }
         .voice-note__content {
           grid-column: 2;
           min-width: 0;
           width: 100%;
+        }
+        .voice-recorder--recording .voice-note__content,
+        .voice-recorder--processing .voice-note__content {
+          grid-column: 1 / -1;
         }
         .voice-note__play {
           grid-column: 1;

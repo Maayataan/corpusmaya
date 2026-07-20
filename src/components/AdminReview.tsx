@@ -12,6 +12,14 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'allies', label: 'Aliados' },
 ];
 
+const PROMPT_LABELS: Record<string, string> = {
+  daily_life: 'Vida cotidiana',
+  expressions: 'Expresiones populares',
+  memories: 'Historias y recuerdos',
+  nature: 'Naturaleza y territorio',
+  traditions: 'Comida, oficios y tradiciones',
+};
+
 export default function AdminReview() {
   const [adminEmail, setAdminEmail] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -273,6 +281,7 @@ function PendingTab() {
               <span>{entry.contributor_name}</span>
               <span>{entry.dialect}</span>
               <span>{entry.source}</span>
+              {entry.prompt_topic && <span>Idea: {PROMPT_LABELS[entry.prompt_topic] || entry.prompt_topic}</span>}
               {entry.audio_url && (
                 <audio controls preload="none" src={entry.audio_url}>
                   <track kind="captions" />
@@ -350,6 +359,7 @@ function ApprovedTab() {
             <div className="review-meta">
               <span>{entry.contributor_name}</span>
               <span>{entry.dialect}</span>
+              {entry.prompt_topic && <span>Idea: {PROMPT_LABELS[entry.prompt_topic] || entry.prompt_topic}</span>}
               {entry.audio_url && (
                 <audio controls preload="none" src={entry.audio_url}>
                   <track kind="captions" />
